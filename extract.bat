@@ -10,25 +10,28 @@ set "BIN_DIR=%PROJECT_DIR%bin"
 set "ISO_DIR=%PROJECT_DIR%iso"
 
 REM Verifica se Node.js está instalado
-node --version >nul 2>&1
+where node >nul 2>&1
 if errorlevel 1 (
-    cls
-    echo.
-    echo ================================================================
-    echo         ERRO: Node.js NAO ENCONTRADO
-    echo ================================================================
-    echo.
-    echo Node.js nao esta instalado ou nao esta no PATH do sistema.
-    echo.
-    echo Para usar este programa, voce precisa instalar Node.js:
-    echo   - Acesse: https://nodejs.org/
-    echo   - Baixe a versao LTS mais recente
-    echo   - Execute o instalador e siga as instrucoes
-    echo   - Reinicie o computador apos a instalacao
-    echo.
-    echo Pressione qualquer tecla para sair...
-    pause >nul
-    exit /b 1
+    node --version >nul 2>&1
+    if errorlevel 1 (
+        cls
+        echo.
+        echo ================================================================
+        echo         ERRO: Node.js NAO ENCONTRADO
+        echo ================================================================
+        echo.
+        echo Node.js nao esta instalado ou nao esta no PATH do sistema.
+        echo.
+        echo Para usar este programa, voce precisa instalar Node.js:
+        echo   - Acesse: https://nodejs.org/
+        echo   - Baixe a versao LTS mais recente
+        echo   - Execute o instalador e siga as instrucoes
+        echo   - Reinicie o computador apos a instalacao
+        echo.
+        echo Pressione qualquer tecla para sair...
+        pause >nul
+        exit /b 1
+    )
 )
 
 REM Garante que o arquivo de configuração exista

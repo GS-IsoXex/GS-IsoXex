@@ -10,14 +10,17 @@ echo.
 
 REM Verifica Node.js
 echo %BS%[1;33mVerificando Node.js...%BS%[0m
-node --version >nul 2>&1
+where node >nul 2>&1
 if errorlevel 1 (
-    echo %BS%[1;31mErro: Node.js não detectado!%BS%[0m
-    echo.
-    echo Baixe em: https://nodejs.org/
-    echo.
-    pause
-    exit /b 1
+    node --version >nul 2>&1
+    if errorlevel 1 (
+        echo %BS%[1;31mErro: Node.js não detectado!%BS%[0m
+        echo.
+        echo Baixe em: https://nodejs.org/
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 node --version
