@@ -1,104 +1,143 @@
-# extract-xiso
+# GS IsoXex
 
-A command line utility created by [*in*](mailto:in@fishtank.com) to allow the creation, modification, and extraction of XISOs. Currently being maintained and modernized by the [*XboxDev organization*](https://github.com/XboxDev/XboxDev).
+## Sobre
 
-## Features
+GS IsoXex é uma ferramenta em Node.js criada para ajudar na extração de arquivos `.iso` e `.xiso`, com o objetivo principal de auxiliar usuários a transformar imagens de disco em conteúdo pronto para uso no formato XEX.
 
-- Create XISOs from a directory.
+## Pré-requisitos
 
-- Extract XISO content to a directory.
+- Node.js 14 ou superior
+- npm (instalado junto com o Node.js)
+- Windows, macOS ou Linux
+- Espaço livre em disco suficiente para os arquivos extraídos
 
-- Multi-Platform and Open-Source.
+## Instalar o Node.js
 
-## Usage
+1. Acesse o site oficial: https://nodejs.org/
+2. Baixe a versão LTS recomendada para o seu sistema operacional
+3. Execute o instalador e siga as instruções
+4. Reinicie o terminal após a instalação
 
-The `extract-xiso` utility can run in multiple modes: *create*, *list*, *rewrite*, and *extract*.
+Verifique a instalação com:
 
-### Create `-c`
-
-Create an XISO from a directiory.
-```
-# Create halo-2.iso in the current directory containing the files within ./halo-2.iso
-./extract-xiso -c ./halo-2
-
-# Create halo-ce.iso in the /home/me/games directory containing files in the ./halo-ce directory
-./extract-xiso -c ./halo-ce /home/me/games/halo-ce.iso
-```
-
-### List `-l`
-
-List the file contents within an XISO file.
-```
-# Get file contents of a XISO
-./extract-xiso -l ./halo-ce.iso
-
-# List file contents of multiple XISOs
-./extract-xiso -l ./halo-2.iso ./halo-ce.iso
+```bash
+node --version
+npm --version
 ```
 
-### Rewrite `-r`
+## Instalação do GS IsoXex
 
-Rewrites filesystem structure of an XISO.
-```
-# Rewrites XISO
-./extract-xiso -r ./halo-ce.iso
-# Can be batched
-./extract-xiso -r ./halo-ce.iso ./halo-2.iso
-```
+No diretório do projeto, execute:
 
-### Extract `-x`
-
-Extract XISO contents to a directory.
-```
-# Default mode when no arguments given, extracts to ./halo-ce/
-./extract-xiso ./halo-ce.iso
-
-# Can be given a target directory
-./extract-xiso ./halo-2.iso -d /home/games/halo-2/
-```
-
-### Options
-
-`extract-xiso` has a few optional arguments that can be provided in different modes:
-```
--d <directory>      In extract mode, expand xiso in <directory>.
-                    In rewrite mode, rewrite xiso in <directory>.
--D                  In rewrite mode, delete old xiso after processing.
--h                  Print this help text and exit.
--m                  In create or rewrite mode, disable automatic .xbe
-                      media enable patching (not recommended).
--q                  Run quiet (suppress all non-error output).
--Q                  Run silent (suppress all output).
--s                  Skip $SystemUpdate folder.
--v                  Print version information and exit.
-```
-
-## Building
-
-### Requirements
-
-- cmake
-- make
-- gcc
-
-### Windows / macOS / Linux
-
-After requirements are installed with your distribution's package manager (or homebrew for macOS), open terminal and change directory to the project root. Then run the following build commands:
-
-```
-# Clone Repo
-git clone https://github.com/XboxDev/extract-xiso.git
-
-# cd into directory
+```bash
 cd extract-xiso
-
-# Create working directory
-mkdir build
-cd build
-
-# Build project
-cmake ..
-make
+npm install
 ```
 
-The compiled binary should now be in the `extract-xiso/build` directory as `extract-xiso`.
+Ou, para facilitar, use o arquivo `install.bat`:
+
+```cmd
+install.bat
+```
+
+Isso instalará todas as dependências necessárias para rodar a ferramenta.
+
+## Como usar
+
+### 1. Adicione seus arquivos
+
+Coloque seus arquivos `.iso`, `.xiso` ou arquivos compactados que contenham `.iso`/`.xiso` na pasta:
+
+```text
+extract-xiso/iso/
+```
+
+### 2. Abra o projeto no Windows
+
+Se você estiver no Windows, abra a pasta `extract-xiso` no Explorador de Arquivos e confirme que os arquivos a seguir existem:
+
+- `install.bat`
+- `extract.bat`
+- `config.json`
+- `bin\extract.js`
+- `iso\` (pasta para seus arquivos de entrada)
+
+### 3. Instale as dependências
+
+No terminal, dentro da pasta do projeto:
+
+```bash
+npm install
+```
+
+Ou use o arquivo de instalação simples:
+
+```cmd
+install.bat
+```
+
+### 4. Execute a extração
+
+Você pode executar a ferramenta de duas maneiras:
+
+- Pelo terminal:
+
+```bash
+node bin/extract.js
+```
+
+- No Windows, clique duas vezes em `extract.bat` ou execute:
+
+```cmd
+extract.bat
+```
+
+### 5. Verifique a saída
+
+Os arquivos extraídos serão salvos em uma pasta de saída próxima aos arquivos de origem ou conforme definido em `config.json`.
+
+## Configuração opcional
+
+Abra `config.json` com um editor de texto simples (Bloco de Notas, Notepad++, VS Code) e personalize conforme necessário:
+
+```json
+{
+  "isoDir": "iso",
+  "outputDir": "output",
+  "deleteSystemUpdate": false,
+  "deleteIsoAfterExtract": false,
+  "sevenZipPath": "node_modules/7zip-bin/win/x64/7za.exe",
+  "unrarPath": "tools/UnRAR.exe"
+}
+```
+
+- `isoDir`: pasta de entrada onde a ferramenta procura por arquivos `.iso`, `.xiso` e arquivos compactados.
+- `outputDir`: pasta de saída para os arquivos extraídos.
+- `deleteSystemUpdate`: remove a pasta `$SystemUpdate` durante a extração, quando aplicável.
+- `deleteIsoAfterExtract`: remove o arquivo de origem após a extração bem-sucedida.
+- `sevenZipPath`: caminho para o executável 7-Zip usado na extração de arquivos compactados.
+- `unrarPath`: caminho para o executável UnRAR usado como fallback para arquivos `.rar`.
+
+## Arquivos compactados
+
+GS IsoXex detecta arquivos compactados na pasta `iso/` e tenta extrair qualquer `.iso` ou `.xiso` encontrado dentro deles. Se `deleteIsoAfterExtract` estiver habilitado, o arquivo compactado também será removido depois da extração.
+
+## Exemplo de uso
+
+1. Coloque `meujogo.iso` ou `meujogo.rar` em `extract-xiso/iso/`
+2. Execute `node bin/extract.js`
+3. Abra a pasta de saída e verifique os arquivos extraídos
+
+## Propósito do projeto
+
+O objetivo do GS IsoXex é oferecer uma ferramenta de apoio para usuários que precisam extrair arquivos ISO para XEX de forma simples e eficiente. Ele não se propõe a ser um conversor completo de formatos avançados; o foco é facilitar a extração e o manuseio de imagens de disco.
+
+## Créditos
+
+A funcionalidade de extração de ISO para XEX neste projeto é baseada no trabalho original de [XboxDev/extract-xiso](https://github.com/XboxDev/extract-xiso).
+
+## Suporte
+
+- Se o Node.js não estiver instalado, acesse https://nodejs.org/
+- Se ocorrerem erros, verifique se os arquivos `.iso`/`.xiso` estão íntegros
+- Use `config.json` para ajustar caminhos e opções de exclusão

@@ -1,0 +1,34 @@
+{
+  "name": "gs-isoxex",
+  "version": "0.2.0",
+  "description": "GS IsoXex: Node.js helper for Xbox XISO extraction with multi-core support and progress tracking.",
+  "main": "index.js",
+  "bin": {
+    "gs-isoxex": "bin/extract.js"
+  },
+  "scripts": {
+    "test": "node bin/extract.js",
+    "extract": "node bin/extract.js",
+    "start": "node bin/extract.js"
+  },
+  "keywords": [
+    "xbox",
+    "xiso",
+    "iso",
+    "extract",
+    "node",
+    "multi-core",
+    "parallel"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14"
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "unrar.js": "^0.2.5",
+    "adm-zip": "^0.5.10",
+    "decompress": "^4.2.1"
+  }
+}

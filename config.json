@@ -1,0 +1,8 @@
+{
+  "isoDir": "iso",
+  "outputDir": "iso",
+  "deleteSystemUpdate": true,
+  "deleteIsoAfterExtract": true,
+  "sevenZipPath": "node_modules/7zip-bin/win/x64/7za.exe",
+  "unrarPath": null
+}
