@@ -35,7 +35,7 @@ if errorlevel 1 (
 )
 
 REM Garante que o arquivo de configuração exista
-node "%BIN_DIR%\config.js" --init >nul 2>&1
+node "!BIN_DIR!\config.js" --init >nul 2>&1
 
 REM Loop do menu principal
 :menu
@@ -61,15 +61,15 @@ if "%choice%"=="1" (
     echo.
     echo Iniciando extracao de arquivos ISO...
     echo.
-    node "%BIN_DIR%\extract.js"
+    node "!BIN_DIR!\extract.js"
     set "RC=!ERRORLEVEL!"
     if not "!RC!"=="0" (
         echo.
         echo Erro durante a execucao! Codigo: !RC!
         echo.
         echo Exibindo as ultimas linhas de extract.log para depuracao:
-        if exist "%PROJECT_DIR%extract.log" (
-            powershell -NoProfile -Command "Get-Content -Path '%PROJECT_DIR%extract.log' -Tail 200"
+        if exist "!PROJECT_DIR!extract.log" (
+            powershell -NoProfile -Command "Get-Content -Path '!PROJECT_DIR!extract.log' -Tail 200"
         ) else (
             echo extract.log nao encontrado
         )
@@ -84,7 +84,7 @@ if "%choice%"=="1" (
 )
 
 if "%choice%"=="2" (
-    call "%PROJECT_DIR%config.bat"
+    call "!PROJECT_DIR!config.bat"
     goto menu
 )
 

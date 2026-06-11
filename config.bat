@@ -7,10 +7,10 @@ cd /d "%~dp0"
 set "BIN_DIR=%~dp0bin"
 set "CONFIG_FILE=%~dp0config.json"
 
-node "%BIN_DIR%\config.js" --init >nul 2>&1
+node "!BIN_DIR!\config.js" --init >nul 2>&1
 
 :loadConfig
-for /f "usebackq delims=" %%A in (`node "%BIN_DIR%\config.js" --get`) do (
+for /f "usebackq delims=" %%A in (`node "!BIN_DIR!\config.js" --get`) do (
   for /f "tokens=1* delims==" %%B in ("%%A") do set "%%B=%%C"
 )
 goto :menu
@@ -43,7 +43,7 @@ goto :menu
 echo Selecionar pasta de ISOs... 
 for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.SelectedPath = '%ISO_DIR%'; $d.Description = 'Selecione a pasta onde estao seus arquivos ISO'; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }"`) do set "SELECTED=%%A"
 if defined SELECTED (
-  node "%BIN_DIR%\config.js" --set isoDir "%SELECTED%" >nul 2>&1
+  node "!BIN_DIR!\config.js" --set isoDir "!SELECTED!" >nul 2>&1
   set "SELECTED="
 )
 goto :loadConfig
@@ -52,29 +52,29 @@ goto :loadConfig
 echo Selecionar pasta de saida... 
 for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.SelectedPath = '%OUTPUT_DIR%'; $d.Description = 'Selecione a pasta onde os arquivos extraidos serao salvos'; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }"`) do set "SELECTED=%%A"
 if defined SELECTED (
-  node "%BIN_DIR%\config.js" --set outputDir "%SELECTED%" >nul 2>&1
+  node "!BIN_DIR!\config.js" --set outputDir "!SELECTED!" >nul 2>&1
   set "SELECTED="
 )
 goto :loadConfig
 
 :toggleSystem
-if /i "%DELETE_SYSTEM_UPDATE%"=="true" (
-  node "%BIN_DIR%\config.js" --set deleteSystemUpdate false >nul 2>&1
+if /i "!DELETE_SYSTEM_UPDATE!"=="true" (
+  node "!BIN_DIR!\config.js" --set deleteSystemUpdate false >nul 2>&1
 ) else (
-  node "%BIN_DIR%\config.js" --set deleteSystemUpdate true >nul 2>&1
+  node "!BIN_DIR!\config.js" --set deleteSystemUpdate true >nul 2>&1
 )
 goto :loadConfig
 
 :toggleDeleteIso
-if /i "%DELETE_ISO_AFTER_EXTRACT%"=="true" (
-  node "%BIN_DIR%\config.js" --set deleteIsoAfterExtract false >nul 2>&1
+if /i "!DELETE_ISO_AFTER_EXTRACT!"=="true" (
+  node "!BIN_DIR!\config.js" --set deleteIsoAfterExtract false >nul 2>&1
 ) else (
-  node "%BIN_DIR%\config.js" --set deleteIsoAfterExtract true >nul 2>&1
+  node "!BIN_DIR!\config.js" --set deleteIsoAfterExtract true >nul 2>&1
 )
 goto :loadConfig
 
 :resetConfig
-node "%BIN_DIR%\config.js" --reset >nul 2>&1
+node "!BIN_DIR!\config.js" --reset >nul 2>&1
 goto :loadConfig
 
 :end
