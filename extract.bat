@@ -61,7 +61,7 @@ if "%choice%"=="1" (
     echo.
     echo Iniciando extracao de arquivos ISO...
     echo.
-    node "!BIN_DIR!\extract.js"
+    node "%~dp0bin\extract.js"
     set "RC=!ERRORLEVEL!"
     if not "!RC!"=="0" (
         echo.
