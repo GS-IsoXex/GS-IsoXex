@@ -88,6 +88,18 @@ function verifyXisoSync(isoPath) {
   }
 }
 
+function sanitizeXisoFilename(filename) {
+  if (typeof filename !== 'string') {
+    return '';
+  }
+
+  return filename
+    .replace(/\0/g, '')
+    .replace(/[\\/<>:"|?*]/g, '_')
+    .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+    .trim();
+}
+
 function validateFilename(filename) {
   if (!filename || filename === '.' || filename === '..' || filename.includes('/') || filename.includes('\\')) {
     throw new Error(`Invalid filename in XISO: ${filename}`);
@@ -183,14 +195,11 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
 
     pos += entrySize;
     const nameBuffer = readBufferSync(fd, filenameLength, pos);
-    let filename = nameBuffer.toString('ascii');
+    let filename = nameBuffer.toString('latin1');
     pos += filenameLength;
 
     // Sanitize invalid bytes and filename characters from XISO entries.
-    filename = filename.replace(/\0/g, '');
-    filename = filename.replace(/[\/<>:"|?*]/g, '_');
-    filename = filename.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
-    filename = filename.trim();
+    filename = sanitizeXisoFilename(filename);
 
     if (!filename || filename === '.' || filename === '..') {
       if (rOffset !== 0) {
