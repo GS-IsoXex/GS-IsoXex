@@ -39,8 +39,7 @@ node "!BIN_DIR!\config.js" --init >nul 2>&1
 
 REM Le a versao atual do package.json
 set "PROJECT_VERSION=0.0.0"
-for /f "usebackq delims=" %%V in (
-ode -p "require('./package.json').version" 2^>nul) do set "PROJECT_VERSION=%%V"
+for /f "usebackq delims=" %%V in (`node -p "require('./package.json').version" 2^>nul`) do set "PROJECT_VERSION=%%V"
 
 REM Verifica se existe uma nova versao no GitHub
 set "UPDATE_STATUS=OK"
@@ -48,8 +47,7 @@ set "LOCAL_VERSION=%PROJECT_VERSION%"
 set "REMOTE_VERSION=%PROJECT_VERSION%"
 set "UPDATE_AVAILABLE=0"
 set "UPDATE_URL="
-for /f "usebackq tokens=1-5 delims=|" %%A in (
-ode "!BIN_DIR!\update-project.js" 2^>^&1) do (
+for /f "usebackq tokens=1-5 delims=|" %%A in (`node "!BIN_DIR!\update-project.js" 2^>^&1`) do (
     set "UPDATE_STATUS=%%A"
     set "LOCAL_VERSION=%%B"
     set "REMOTE_VERSION=%%C"
@@ -174,7 +172,7 @@ if "%choice%"=="3" (
 )
 
 echo Opcao invalida! Digite 1, 2 ou 3.
-echo.
-echo Pressione qualquer tecla para tentar novamente...
-pause >nul
-goto menu
+    echo.
+    echo Pressione qualquer tecla para tentar novamente...
+    pause >nul
+    goto menu

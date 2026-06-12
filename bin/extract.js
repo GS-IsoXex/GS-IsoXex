@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process');
 const extractXiso = require('../index');
 let unrar = null;
 try {
@@ -211,25 +211,73 @@ function findUnrarExecutable(preferredPath) {
   return null;
 }
 
-function extractArchiveWith7z(archivePath, outDir, executable) {
+async function extractArchiveWith7z(archivePath, outDir, executable) {
   fs.mkdirSync(outDir, { recursive: true });
   const execPath = executable || '7z';
-  // Resolve '7z' to an absolute path when possible; otherwise prefer bundled path7za
   const resolved = resolveExecutable(execPath) || path7za || execPath;
-  const args = ['x', '-y', `-o${outDir}`, archivePath];
-  // Capture output so we can inspect stderr for specific errors
-  const res = spawnSync(resolved, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  if (res.error) throw res.error;
-  if (res.status !== 0) {
-    const ext = path.extname(archivePath).toLowerCase();
-    const stderr = (res.stderr || '').toString();
-    const stdout = (res.stdout || '').toString();
-    const msg = `${resolved} failed (code ${res.status}). stdout: ${stdout.trim()} stderr: ${stderr.trim()}`;
-    if (ext === '.rar') {
-      throw new Error(`${msg}`);
+
+  const args = ['x', '-y', `-o${outDir}`, archivePath, '-bsp1']; // -bsp1 sends progress to stdout
+
+  return new Promise((resolve, reject) => {
+    let lastPercent = 0;
+    let stdoutBuffer = '';
+    let child;
+    try {
+      child = spawn(resolved, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      return reject(err);
     }
-    throw new Error(msg);
-  }
+
+    child.stdout.on('data', (chunk) => {
+      try {
+        const s = chunk.toString('utf8');
+        stdoutBuffer += s;
+        const matches = s.match(/(\d{1,3})%/g);
+        if (matches && matches.length > 0) {
+          const m = matches[matches.length - 1];
+          const pct = parseInt(m.replace('%', ''), 10);
+          if (!Number.isNaN(pct)) {
+            lastPercent = pct;
+            const bar = createProgressBar(pct, 100, 30);
+            clearLine();
+            process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${path.basename(archivePath)} ${bar} ${pct}%`);
+          }
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      // 7z may emit progress on stderr depending on platform/config; parse similarly
+      try {
+        const s = chunk.toString('utf8');
+        const matches = s.match(/(\d{1,3})%/g);
+        if (matches && matches.length > 0) {
+          const m = matches[matches.length - 1];
+          const pct = parseInt(m.replace('%', ''), 10);
+          if (!Number.isNaN(pct)) {
+            lastPercent = pct;
+            const bar = createProgressBar(pct, 100, 30);
+            clearLine();
+            process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${path.basename(archivePath)} ${bar} ${pct}%`);
+          }
+        }
+      } catch (e) {}
+    });
+
+    child.on('error', (err) => {
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      // finalize line
+      try { process.stdout.write('\n'); } catch (e) {}
+      if (code === 0) return resolve();
+      const stdout = stdoutBuffer || '';
+      return reject(new Error(`${resolved} failed (code ${code}). output: ${stdout.trim()}`));
+    });
+  });
 }
 
 function resolveExecutable(name) {
@@ -315,13 +363,28 @@ function extractRarWithUnrar(archivePath, outDir) {
     try {
       const options = {
         onProgress: (p) => {
-          // opcional: podemos logar progresso se quisermos
+          try {
+            let pct = 0;
+            if (typeof p === 'number') {
+              // se p for fração 0..1
+              pct = p > 0 && p <= 1 ? Math.round(p * 100) : Math.round(p);
+            } else if (p && typeof p.percent === 'number') {
+              pct = Math.round(p.percent);
+            }
+            if (pct >= 0) {
+              const bar = createProgressBar(pct, 100, 30);
+              clearLine();
+              process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${path.basename(archivePath)} ${bar} ${pct}%`);
+            }
+          } catch (e) {}
         },
       };
       unrar.unrar(archivePath, outDir, options, (err, files) => {
         if (err) {
+          process.stdout.write('\n');
           return reject(new Error(typeof err === 'string' ? err : (err && err.message) || String(err)));
         }
+        process.stdout.write('\n');
         resolve(files || []);
       });
     } catch (e) {
@@ -382,7 +445,7 @@ async function extractArchivesAndCollectIsos(isoDir) {
       // Estratégia de extração com 7z
       if (!extracted && have7z) {
         try {
-          extractArchiveWith7z(arch, outDir, sevenZipExe);
+          await extractArchiveWith7z(arch, outDir, sevenZipExe);
           extracted = true;
         } catch (err) {
           lastError = err;
@@ -397,7 +460,7 @@ async function extractArchivesAndCollectIsos(isoDir) {
             const unrarExe = resolveExecutable(config.unrarPath || 'unrar') || findUnrarExecutable(config.unrarPath);
             if (unrarExe) {
               try {
-                console.log(`Tentando extrair RAR com: ${unrarExe}`);
+                console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via ${path.basename(unrarExe)})`);
                 const res = spawnSync(unrarExe, ['x', '-y', arch, outDir], { stdio: 'inherit' });
                 if (res.error) throw res.error;
                 if (res.status === 0) {
@@ -418,7 +481,7 @@ async function extractArchivesAndCollectIsos(isoDir) {
       if (!extracted && archExt === '.zip') {
         if (AdmZip || decompress) {
           try {
-            console.log(`Extraindo ZIP com Node (adm-zip/decompress): ${archName}`);
+            console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via Node)`);
             await extractZipWithNode(arch, outDir);
             extracted = true;
           } catch (err) {
@@ -428,7 +491,7 @@ async function extractArchivesAndCollectIsos(isoDir) {
         }
         if (!extracted && !have7z) {
           try {
-            console.log(`Tentando extrair ZIP com PowerShell: ${archName}`);
+            console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via PowerShell)`);
             extractZipWithPowershell(arch, outDir);
             extracted = true;
           } catch (err) {
@@ -474,8 +537,8 @@ async function extractWithProgress(isoObj, outputDir, index, total, numWorkers) 
   const targetDir = config.outputDir
     ? path.join(config.outputDir, sanitizedName)
     : path.join(path.dirname(isoPath), sanitizedName);
-  console.log(
-    `${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Extraindo:${COLORS.reset} ${basename}`,
+    console.log(
+    `${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename}`,
   );
 
     try {
@@ -483,29 +546,54 @@ async function extractWithProgress(isoObj, outputDir, index, total, numWorkers) 
     const isoSize = stats.size;
     let lastPercent = 0;
 
+    // Build overall progress using total bytes from listing to avoid per-file reset.
+    let listing = [];
+    try {
+      listing = extractXiso.listXisoSync(isoPath, { skipSystemUpdate: config.deleteSystemUpdate });
+    } catch (e) {
+      listing = [];
+    }
+    const totalBytes = listing.filter((it) => it.type === 'file').reduce((acc, it) => acc + (it.size || 0), 0);
+    let totalExtracted = 0;
+    const perFileProgress = new Map();
+
     extractXiso.setProgressCallback((progress) => {
-      if (progress.type === 'fileStart') {
-        lastPercent = 0;
-        const bar = createProgressBar(0, progress.size, 30);
-        clearLine();
-        process.stdout.write(
-          `${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Extraindo:${COLORS.reset} ${basename} ${bar} 0%`,
-        );
-        return;
-      }
-      if (progress.type === 'fileProgress') {
-        const bar = createProgressBar(progress.extracted, progress.size, 30);
-        clearLine();
-        process.stdout.write(
-          `${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Extraindo:${COLORS.reset} ${basename} ${bar} ${progress.percent}%`,
-        );
-        lastPercent = progress.percent;
-      }
-      if (progress.type === 'fileComplete') {
-        clearLine();
-        process.stdout.write(
-          `${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} - ${progress.size} bytes extraídos`,
-        );
+      try {
+        if (progress.type === 'fileStart') {
+          perFileProgress.set(progress.path, 0);
+          // initial overall display
+          const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
+          const overallBar = createProgressBar(overallPct, 100, 30);
+          clearLine();
+          process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+          return;
+        }
+
+        if (progress.type === 'fileProgress') {
+          const last = perFileProgress.get(progress.path) || 0;
+          const delta = Math.max(0, progress.extracted - last);
+          if (delta > 0) {
+            totalExtracted += delta;
+            perFileProgress.set(progress.path, progress.extracted);
+          }
+          const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
+          const overallBar = createProgressBar(overallPct, 100, 30);
+          clearLine();
+          process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+        }
+
+        if (progress.type === 'fileComplete') {
+          perFileProgress.set(progress.path, progress.size || perFileProgress.get(progress.path) || 0);
+          const prev = perFileProgress.get(progress.path) || 0;
+          // ensure totalExtracted accounts for any missing delta (edge cases)
+          if (prev > totalExtracted) totalExtracted = prev; // safe guard
+          const overallPct = totalBytes === 0 ? 100 : Math.round((totalExtracted / totalBytes) * 100);
+          const overallBar = createProgressBar(overallPct, 100, 30);
+          clearLine();
+          process.stdout.write(`${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+        }
+      } catch (e) {
+        // ignore progress display errors
       }
     });
 
@@ -550,6 +638,19 @@ async function extractWithProgress(isoObj, outputDir, index, total, numWorkers) 
       } catch (err) {
         console.warn(`${COLORS.red}Falha ao apagar arquivo fonte:${COLORS.reset} ${err.message}`);
       }
+    }
+
+    // Sanitizar nomes de arquivos extraidos para remover caracteres corrompidos
+    try {
+      const sanitizer = require('./sanitize-extracted-filenames');
+      try {
+        sanitizer.sanitizeDirectory(result.outputDir);
+        console.log(`${COLORS.cyan}Nomes sanitizados em:${COLORS.reset} ${result.outputDir}`);
+      } catch (e) {
+        console.warn(`Falha ao sanitizar nomes: ${e && e.message}`);
+      }
+    } catch (e) {
+      // se o módulo nao existir, ignorar
     }
 
     clearLine();

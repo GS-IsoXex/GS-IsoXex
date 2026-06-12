@@ -95,9 +95,67 @@ function sanitizeXisoFilename(filename) {
 
   return filename
     .replace(/\0/g, '')
+    .replace(/\uFFFD/g, '')
     .replace(/[\\/<>:"|?*]/g, '_')
-    .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
-    .trim();
+    .replace(/[\x00-\x1F\x7F-\xFF]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function decodeXisoFilename(buffer) {
+  if (!Buffer.isBuffer(buffer)) return '';
+
+  // Heuristic: if many zero bytes are present, it's likely UTF-16LE
+  let zeroCount = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    if (buffer[i] === 0) zeroCount++;
+  }
+  const zeroRatio = buffer.length > 0 ? zeroCount / buffer.length : 0;
+  try {
+    let result;
+    if (zeroRatio > 0.3 && buffer.length % 2 === 0) {
+      result = buffer.toString('utf16le').replace(/\0/g, '');
+    } else {
+      const latin = buffer.toString('latin1');
+      if (latin.includes('\uFFFD')) {
+        result = buffer.toString('utf8').replace(/\0/g, '');
+      } else {
+        result = latin;
+      }
+    }
+
+    // If the decoded result has non-ASCII garbage, try to recover
+    // by finding the first valid printable ASCII segment in the raw buffer
+    if (/[\x7F-\xFF]/.test(result)) {
+      const recovered = recoverAsciiFilename(buffer);
+      if (recovered) return recovered;
+    }
+
+    return result;
+  } catch (e) {
+    try { return buffer.toString('utf8').replace(/\0/g, ''); } catch (ee) { return buffer.toString('latin1').replace(/\0/g, ''); }
+  }
+}
+
+function recoverAsciiFilename(buffer) {
+  // Find the longest leading sequence of printable ASCII bytes
+  // (0x20-0x7E), stopping at NUL, 0xFF padding, or non-printable bytes
+  let validEnd = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    const b = buffer[i];
+    if (b >= 0x20 && b <= 0x7E) {
+      validEnd = i + 1;
+    } else if (b === 0 || b === 0xFF) {
+      break;
+    } else {
+      // non-printable, non-padding byte; stop here
+      break;
+    }
+  }
+  if (validEnd > 0) {
+    return buffer.slice(0, validEnd).toString('latin1');
+  }
+  return null;
 }
 
 function validateFilename(filename) {
@@ -195,7 +253,7 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
 
     pos += entrySize;
     const nameBuffer = readBufferSync(fd, filenameLength, pos);
-    let filename = nameBuffer.toString('latin1');
+    let filename = decodeXisoFilename(nameBuffer);
     pos += filenameLength;
 
     // Sanitize invalid bytes and filename characters from XISO entries.
