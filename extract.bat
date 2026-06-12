@@ -42,17 +42,59 @@ set "PROJECT_VERSION=0.0.0"
 for /f "usebackq delims=" %%V in (`node -p "require('./package.json').version" 2^>nul`) do set "PROJECT_VERSION=%%V"
 
 REM Verifica se existe uma nova versao no GitHub
-set "UPDATE_STATUS=OK"
 set "LOCAL_VERSION=%PROJECT_VERSION%"
 set "REMOTE_VERSION=%PROJECT_VERSION%"
 set "UPDATE_AVAILABLE=0"
-set "UPDATE_URL="
-for /f "usebackq tokens=1-5 delims=|" %%A in (`node "!BIN_DIR!\update-project.js" 2^>^&1`) do (
-    set "UPDATE_STATUS=%%A"
-    set "LOCAL_VERSION=%%B"
-    set "REMOTE_VERSION=%%C"
-    set "UPDATE_AVAILABLE=%%D"
-    set "UPDATE_URL=%%E"
+for /f "usebackq tokens=1-5 delims=|" %%A in (`node "!BIN_DIR!\check-version.js" check 2^>^&1`) do (
+    if "%%A"=="CHECK" (
+        set "LOCAL_VERSION=%%B"
+        set "REMOTE_VERSION=%%C"
+        set "UPDATE_AVAILABLE=%%D"
+    )
+)
+
+REM Se houver atualizacao disponivel, pergunta antes do menu
+if "%UPDATE_AVAILABLE%"=="1" (
+    cls
+    echo.
+    echo ================================================================
+    echo         GS IsoXex - Atualizacao Disponivel
+    echo ================================================================
+    echo.
+    echo O GS IsoXex que voce esta usando esta desatualizado!
+    echo.
+    echo   Versao local:  %LOCAL_VERSION%
+    echo   Versao remota: %REMOTE_VERSION%
+    echo.
+    echo Deseja atualizar?
+    echo.
+    echo   1 - Sim
+    echo   2 - Nao
+    echo.
+    echo ================================================================
+    echo.
+    set /p "upd_choice=Digite sua opcao (1 ou 2): "
+    if "!upd_choice!"=="1" (
+        cls
+        echo.
+        echo Atualizando GS IsoXex...
+        echo.
+        node "!BIN_DIR!\check-version.js" update
+        if errorlevel 1 (
+            echo.
+            echo Erro ao atualizar. Verifique sua conexao de internet.
+            echo.
+            echo Pressione qualquer tecla para continuar...
+            pause >nul
+        ) else (
+            echo.
+            echo Atualizacao concluida! Reiniciando o programa...
+            echo.
+            pause
+            call "%~f0"
+            exit /b 0
+        )
+    )
 )
 
 REM Loop do menu principal
@@ -60,76 +102,19 @@ REM Loop do menu principal
 cls
 echo.
 echo ================================================================
-echo         Extract-XISO Node.js v%PROJECT_VERSION%
+echo         GS IsoXex v%PROJECT_VERSION%
 echo ================================================================
 echo.
-if "%UPDATE_STATUS%"=="ERROR" (
-    echo AVISO: Nao foi possivel verificar atualizacoes do GitHub.
-    echo Voce podera continuar usando o programa, mas a verificacao falhou.
-    echo.
-) else if "%UPDATE_AVAILABLE%"=="1" (
-    echo ATENCAO: Nova versao disponivel! Atualize para usar o programa.
-    echo Versao instalada: %LOCAL_VERSION%
-    echo Versao mais recente: %REMOTE_VERSION%
-    echo.
-)
 echo Escolha uma opcao:
 echo.
-if "%UPDATE_AVAILABLE%"=="1" (
-    echo   [1] Atualizar para a versao %REMOTE_VERSION%
-    echo   [2] Configuracoes
-    echo   [3] Sair
-) else (
-    echo   [1] Extrair ISO para XEX
-    echo   [2] Configuracoes
-    echo   [3] Sair
-)
+echo   [1] Extrair ISO para XEX
+echo   [2] Configuracoes
+echo   [3] Sair
 echo.
 echo ================================================================
 echo.
 
 set /p "choice=Digite sua opcao (1, 2 ou 3): "
-
-if "%UPDATE_AVAILABLE%"=="1" (
-    if "%choice%"=="1" (
-        cls
-        echo.
-        echo Atualizando o projeto para a versao %REMOTE_VERSION%...
-        echo.
-        node "!BIN_DIR!\update-project.js" --update
-        set "RC=!ERRORLEVEL!"
-        if not "!RC!"=="0" (
-            echo.
-            echo Falha ao atualizar o projeto. Verifique sua conexao de internet e tente novamente.
-            echo.
-            echo Pressione qualquer tecla para voltar ao menu...
-            pause >nul
-            goto menu
-        )
-        echo.
-        echo Projeto atualizado com sucesso para a versao %REMOTE_VERSION%.
-        echo Pressione qualquer tecla para reiniciar o menu com a nova versao...
-        pause >nul
-        call "%~f0"
-        exit /b 0
-    )
-    if "%choice%"=="2" (
-        call "!PROJECT_DIR!config.bat"
-        goto menu
-    )
-    if "%choice%"=="3" (
-        cls
-        echo.
-        echo Ate logo!
-        echo.
-        exit /b 0
-    )
-    echo Opcao invalida! Digite 1, 2 ou 3.
-    echo.
-    echo Pressione qualquer tecla para tentar novamente...
-    pause >nul
-    goto menu
-)
 
 if "%choice%"=="1" (
     cls
