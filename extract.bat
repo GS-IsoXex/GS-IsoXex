@@ -47,11 +47,16 @@ REM Verifica se existe uma nova versao no GitHub
 set "LOCAL_VERSION=%PROJECT_VERSION%"
 set "REMOTE_VERSION=%PROJECT_VERSION%"
 set "UPDATE_AVAILABLE=0"
+set "CHECK_ERROR=0"
 for /f "usebackq tokens=1-5 delims=|" %%A in (`node "!BIN_DIR!\check-version.js" check 2^>^&1`) do (
     if "%%A"=="CHECK" (
         set "LOCAL_VERSION=%%B"
         set "REMOTE_VERSION=%%C"
-        set "UPDATE_AVAILABLE=%%D"
+        if "%%D"=="error" (
+            set "CHECK_ERROR=1"
+        ) else (
+            set "UPDATE_AVAILABLE=%%D"
+        )
     )
 )
 
@@ -107,6 +112,10 @@ echo ================================================================
 echo         GS IsoXex v%PROJECT_VERSION%
 echo ================================================================
 echo.
+if "%CHECK_ERROR%"=="1" (
+    echo AVISO: Nao foi possivel verificar atualizacoes no GitHub.
+    echo.
+)
 echo Escolha uma opcao:
 echo.
 echo   [1] Extrair ISO para XEX

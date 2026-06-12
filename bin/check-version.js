@@ -20,17 +20,31 @@ function readLocalVersion() {
   }
 }
 
-function fetchUrl(url) {
+function fetchUrl(url, maxRedirects) {
+  maxRedirects = maxRedirects || 3;
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'GS-IsoXex' } }, (res) => {
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'GS-IsoXex' },
+      timeout: 15000,
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (maxRedirects <= 0) {
+          reject(new Error('Too many redirects'));
+          return;
+        }
+        fetchUrl(res.headers.location, maxRedirects - 1).then(resolve).catch(reject);
+        return;
+      }
       if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}`));
+        reject(new Error(`HTTP ${res.statusCode} from ${url}`));
         return;
       }
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => resolve(data.trim()));
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
   });
 }
 
@@ -89,11 +103,25 @@ function copyDirectory(src, dest) {
 async function doCheck() {
   const local = readLocalVersion();
   let remote = '';
+  // Try raw version URL first, fall back to GitHub API
   try {
     remote = await fetchUrl(rawVersionUrl);
   } catch {
-    console.log(`CHECK|${local}||error`);
-    return;
+    try {
+      const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`;
+      const release = await new Promise((resolve, reject) => {
+        https.get(apiUrl, { headers: { 'User-Agent': 'GS-IsoXex', Accept: 'application/vnd.github.v3+json' }, timeout: 10000 }, (res) => {
+          let data = '';
+          if (res.statusCode !== 200) { reject(new Error(`API ${res.statusCode}`)); return; }
+          res.on('data', (c) => { data += c; });
+          res.on('end', () => resolve(JSON.parse(data)));
+        }).on('error', reject).on('timeout', function () { this.destroy(); reject(new Error('API timed out')); });
+      });
+      remote = (release.tag_name || release.name || '').replace(/^v/i, '');
+    } catch {
+      console.log(`CHECK|${local}||error`);
+      return;
+    }
   }
   const available = compareSemver(local, remote) < 0 ? '1' : '0';
   console.log(`CHECK|${local}|${remote}|${available}|${repoUrl}`);
