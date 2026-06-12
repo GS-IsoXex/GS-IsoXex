@@ -37,9 +37,11 @@ if errorlevel 1 (
 REM Garante que o arquivo de configuracao exista
 node "!BIN_DIR!\config.js" --init >nul 2>&1
 
-REM Le a versao atual do package.json
+REM Le a versao atual do arquivo version
 set "PROJECT_VERSION=0.0.0"
-for /f "usebackq delims=" %%V in (`node -p "require('./package.json').version" 2^>nul`) do set "PROJECT_VERSION=%%V"
+if exist "!PROJECT_DIR!version" (
+    for /f "usebackq delims=" %%V in (`type "!PROJECT_DIR!version"`) do set "PROJECT_VERSION=%%V"
+)
 
 REM Verifica se existe uma nova versao no GitHub
 set "LOCAL_VERSION=%PROJECT_VERSION%"
