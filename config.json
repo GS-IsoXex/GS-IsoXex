@@ -1,8 +1,8 @@
 {
-  "isoDir": "C:\\Users\\gabri\\Downloads\\Iso",
-  "outputDir": "F:\\JOGOS XBOX 360",
-  "deleteSystemUpdate": true,
-  "deleteIsoAfterExtract": true,
+  "isoDir": "iso",
+  "outputDir": "iso",
+  "deleteSystemUpdate": false,
+  "deleteIsoAfterExtract": false,
   "sevenZipPath": "node_modules/7zip-bin/win/x64/7za.exe",
   "unrarPath": null
 }

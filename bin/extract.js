@@ -538,6 +538,7 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
 
   let totalExtracted = 0;
   let lastProgressUpdate = 0;
+  let lastDisplayedPct = -1;
   const PROGRESS_THROTTLE_MS = 200;
   const perFileProgress = new Map();
 
@@ -545,10 +546,6 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
     try {
       if (progress.type === 'fileStart') {
         perFileProgress.set(progress.path, 0);
-        const overallPct = isoSize === 0 ? 0 : Math.round((totalExtracted / isoSize) * 100);
-        const bar = createProgressBar(overallPct, 100, 30);
-        clearLine();
-        process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${bar} ${overallPct}%`);
         return;
       }
 
@@ -563,6 +560,7 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
         if (now - lastProgressUpdate < PROGRESS_THROTTLE_MS) return;
         lastProgressUpdate = now;
         const overallPct = isoSize === 0 ? 0 : Math.round((totalExtracted / isoSize) * 100);
+        lastDisplayedPct = overallPct;
         const bar = createProgressBar(overallPct, 100, 30);
         const elapsed = (Date.now() - startTime) / 1000;
         const spd = totalExtracted / (elapsed || 0.001);
@@ -577,6 +575,10 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
         const prev = perFileProgress.get(progress.path) || 0;
         if (prev > totalExtracted) totalExtracted = prev;
         const overallPct = isoSize === 0 ? 100 : Math.round((totalExtracted / isoSize) * 100);
+        const now = Date.now();
+        if (overallPct <= lastDisplayedPct && now - lastProgressUpdate < PROGRESS_THROTTLE_MS) return;
+        lastProgressUpdate = now;
+        lastDisplayedPct = overallPct;
         const bar = createProgressBar(overallPct, 100, 30);
         const elapsed = (Date.now() - startTime) / 1000;
         const spd = totalExtracted / (elapsed || 0.001);
