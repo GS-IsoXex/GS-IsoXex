@@ -221,119 +221,147 @@ function extractFileSync(fd, startSector, size, outputDir, itemPath, xboxDiscLse
 }
 
 function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
-  let lOffset = 0;
-  let pos = dirStart;
-
   const isoSize = fs.fstatSync(fd).size;
 
   function isInBounds(offset, size) {
     return offset >= 0 && size >= 0 && offset + size <= isoSize;
   }
 
+  // Manual stack for in-order BST traversal within a single directory.
+  // When a left child is found, save the current entry+right-sibling info
+  // on the stack, then descend to the left child position.
+  // When a subtree is exhausted, pop from stack and process the deferred entry.
+  function processEntry(entry, itemPath) {
+    const skipSU = opts.skipSystemUpdate && itemPath.toLowerCase().includes('$systemupdate');
+    if (skipSU) return;
+
+    if (entry.attributes & XISO_ATTRIBUTE_DIR) {
+      const dirOffset = entry.startSector * XISO_SECTOR_SIZE + opts.xboxDiscLseek;
+      if (isInBounds(dirOffset, XISO_SECTOR_SIZE)) {
+        if (opts.mode === 'extract') {
+          fs.mkdirSync(path.join(opts.outputDir, itemPath), { recursive: true });
+        }
+        results.push({ type: 'directory', path: itemPath, size: 0 });
+        traverseDirectorySync(fd, dirOffset, itemPath, opts, results);
+      }
+    } else {
+      if (opts.mode === 'extract') {
+        extractFileSync(fd, entry.startSector, entry.fileSize, opts.outputDir, itemPath, opts.xboxDiscLseek);
+      }
+      results.push({ type: 'file', path: itemPath, size: entry.fileSize, startSector: entry.startSector });
+    }
+  }
+
+  const stack = [];
+  let pos = dirStart;
+  let curPath = currentPath;
+  let lOffset = 0;
+
+  outer:
   while (true) {
-    if (!isInBounds(pos, XISO_TABLE_OFFSET_SIZE)) {
-      return;
-    }
-    const tmpBuffer = readBufferSync(fd, XISO_TABLE_OFFSET_SIZE, pos);
-    let tmp = tmpBuffer.readUInt16LE(0);
-    pos += XISO_TABLE_OFFSET_SIZE;
-
-    if (tmp === XISO_PAD_SHORT) {
-      if (lOffset === 0) {
-        return;
+    while (true) {
+      if (!isInBounds(pos, XISO_TABLE_OFFSET_SIZE)) {
+        break outer;
       }
 
-      const offsetBytes = lOffset * XISO_DWORD_SIZE;
-      const pad = (XISO_SECTOR_SIZE - (offsetBytes % XISO_SECTOR_SIZE)) % XISO_SECTOR_SIZE;
-      lOffset = offsetBytes + pad;
-      const newPos = dirStart + lOffset;
-      if (!isInBounds(newPos, XISO_TABLE_OFFSET_SIZE)) {
-        return;
-      }
-      pos = newPos;
-      continue;
-    }
+      const tmpBuffer = readBufferSync(fd, XISO_TABLE_OFFSET_SIZE, pos);
+      let tmp = tmpBuffer.readUInt16LE(0);
+      pos += XISO_TABLE_OFFSET_SIZE;
 
-    lOffset = tmp;
-    const entrySize = XISO_TABLE_OFFSET_SIZE + XISO_SECTOR_OFFSET_SIZE + XISO_FILESIZE_SIZE + XISO_ATTRIBUTES_SIZE + XISO_FILENAME_LENGTH_SIZE;
-    if (!isInBounds(pos, entrySize)) {
-      return;
-    }
-    const entryBuffer = readBufferSync(fd, entrySize, pos);
+      if (tmp === XISO_PAD_SHORT) {
+        if (lOffset === 0) {
+          break;
+        }
 
-    const rOffset = entryBuffer.readUInt16LE(0);
-    const startSector = entryBuffer.readUInt32LE(2);
-    const fileSize = entryBuffer.readUInt32LE(6);
-    const attributes = entryBuffer.readUInt8(10);
-    let filenameLength = entryBuffer.readUInt8(11);
-
-    pos += entrySize;
-    if (filenameLength > 255 || !isInBounds(pos, filenameLength)) {
-      filenameLength = 0;
-    }
-    let filename = '';
-    if (filenameLength > 0) {
-      const nameBuffer = readBufferSync(fd, filenameLength, pos);
-      filename = decodeXisoFilename(nameBuffer);
-    }
-    pos += filenameLength;
-
-    // Sanitize invalid bytes and filename characters from XISO entries.
-    filename = sanitizeXisoFilename(filename);
-
-    if (!filename || filename === '.' || filename === '..') {
-      if (rOffset !== 0) {
-        const newPos = dirStart + rOffset * XISO_DWORD_SIZE;
+        const offsetBytes = lOffset * XISO_DWORD_SIZE;
+        const pad = (XISO_SECTOR_SIZE - (offsetBytes % XISO_SECTOR_SIZE)) % XISO_SECTOR_SIZE;
+        lOffset = offsetBytes + pad;
+        const newPos = dirStart + lOffset;
         if (!isInBounds(newPos, XISO_TABLE_OFFSET_SIZE)) {
-          return;
+          break;
         }
         pos = newPos;
+        continue;
+      }
+
+      const leftOffset = tmp;
+      const entrySize = XISO_TABLE_OFFSET_SIZE + XISO_SECTOR_OFFSET_SIZE + XISO_FILESIZE_SIZE + XISO_ATTRIBUTES_SIZE + XISO_FILENAME_LENGTH_SIZE;
+      if (!isInBounds(pos, entrySize)) {
+        break;
+      }
+      const entryBuffer = readBufferSync(fd, entrySize, pos);
+
+      const rOffset = entryBuffer.readUInt16LE(0);
+      const startSector = entryBuffer.readUInt32LE(2);
+      const fileSize = entryBuffer.readUInt32LE(6);
+      const attributes = entryBuffer.readUInt8(10);
+      let filenameLength = entryBuffer.readUInt8(11);
+
+      pos += entrySize;
+      if (filenameLength > 255 || !isInBounds(pos, filenameLength)) {
+        filenameLength = 0;
+      }
+      let filename = '';
+      if (filenameLength > 0) {
+        const nameBuffer = readBufferSync(fd, filenameLength, pos);
+        filename = decodeXisoFilename(nameBuffer);
+      }
+      pos += filenameLength;
+
+      filename = sanitizeXisoFilename(filename);
+
+      if (!filename || filename === '.' || filename === '..') {
+        if (rOffset !== 0) {
+          pos = dirStart + rOffset * XISO_DWORD_SIZE;
+          lOffset = rOffset;
+          continue;
+        }
+        break;
+      }
+
+      validateFilename(filename);
+
+      if (leftOffset !== 0) {
+        const leftPos = dirStart + leftOffset * XISO_DWORD_SIZE;
+        if (isInBounds(leftPos, XISO_TABLE_OFFSET_SIZE)) {
+          // Defer entry + right siblings; descend into left child
+          stack.push({
+            rOffset,
+            startSector,
+            fileSize,
+            attributes,
+            filename,
+            path: curPath,
+          });
+          pos = leftPos;
+          lOffset = 0;
+          continue outer;
+        }
+      }
+
+      const itemPath = curPath ? path.join(curPath, filename) : filename;
+      processEntry({ startSector, fileSize, attributes }, itemPath);
+
+      if (rOffset !== 0) {
+        pos = dirStart + rOffset * XISO_DWORD_SIZE;
         lOffset = rOffset;
         continue;
       }
-      return;
+
+      break;
     }
 
-    validateFilename(filename);
+    // No more entries at this level; process deferred entries from stack
+    while (stack.length > 0) {
+      const entry = stack.pop();
+      const itemPath = entry.path ? path.join(entry.path, entry.filename) : entry.filename;
+      processEntry(entry, itemPath);
 
-    if (lOffset !== 0) {
-      const leftPos = dirStart + lOffset * XISO_DWORD_SIZE;
-      if (isInBounds(leftPos, XISO_TABLE_OFFSET_SIZE)) {
-        traverseDirectorySync(fd, leftPos, currentPath, opts, results);
+      if (entry.rOffset !== 0) {
+        pos = dirStart + entry.rOffset * XISO_DWORD_SIZE;
+        lOffset = entry.rOffset;
+        continue outer;
       }
-    }
-
-    const itemPath = currentPath ? path.join(currentPath, filename) : filename;
-    const skipSystemUpdate = opts.skipSystemUpdate && itemPath.toLowerCase().includes('$systemupdate');
-
-    if (attributes & XISO_ATTRIBUTE_DIR) {
-      if (!skipSystemUpdate) {
-        const dirOffset = startSector * XISO_SECTOR_SIZE + opts.xboxDiscLseek;
-        if (isInBounds(dirOffset, XISO_SECTOR_SIZE)) {
-          if (opts.mode === 'extract') {
-            fs.mkdirSync(path.join(opts.outputDir, itemPath), { recursive: true });
-          }
-          results.push({ type: 'directory', path: itemPath, size: 0 });
-          traverseDirectorySync(fd, dirOffset, itemPath, opts, results);
-        }
-      }
-    } else {
-      if (!skipSystemUpdate) {
-        if (opts.mode === 'extract') {
-          extractFileSync(fd, startSector, fileSize, opts.outputDir, itemPath, opts.xboxDiscLseek);
-        }
-        results.push({ type: 'file', path: itemPath, size: fileSize, startSector });
-      }
-    }
-
-    if (rOffset !== 0) {
-      const newPos = dirStart + rOffset * XISO_DWORD_SIZE;
-      if (!isInBounds(newPos, XISO_TABLE_OFFSET_SIZE)) {
-        return;
-      }
-      pos = newPos;
-      lOffset = rOffset;
-      continue;
     }
 
     break;
