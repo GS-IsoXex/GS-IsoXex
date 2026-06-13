@@ -10,6 +10,8 @@ Assista ao tutorial completo no YouTube para aprender a usar o GS IsoXex do zero
 
 [![GS IsoXex - Tutorial](https://img.youtube.com/vi/RkMRb1IgCBo/0.jpg)](https://www.youtube.com/watch?v=RkMRb1IgCBo)
 
+[![Assistir no YouTube](https://img.shields.io/badge/Assistir_no_YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=RkMRb1IgCBo)
+
 **Se o vídeo te ajudar, dá aquela força!** 👍 Deixe seu **like**, **compartilhe** com quem precisa e **inscreva-se** no canal. Isso nos motiva a continuar atualizando e melhorando o projeto! 🚀
 
 ## Pré-requisitos
