@@ -3,34 +3,30 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const readline = require('readline');
 const { spawnSync, spawn } = require('child_process');
 const extractXiso = require('../index');
 let unrar = null;
 try {
   unrar = require('unrar.js');
 } catch (e) {
-  // unrar.js may not be installed
 }
 let decompress = null;
 try {
   decompress = require('decompress');
 } catch (e) {
-  // decompress may not be installed
 }
 let AdmZip = null;
 try {
   AdmZip = require('adm-zip');
 } catch (e) {
-  // adm-zip may not be installed
 }
 let path7za = null;
 try {
   path7za = require('7zip-bin').path7za;
 } catch (e) {
-  // 7zip-bin may not be installed; fallback to system 7z
 }
 
-// Logger: grava também em extract.log para depuração
 const LOG_PATH = path.resolve(__dirname, '../extract.log');
 try {
   const logStream = fs.createWriteStream(LOG_PATH, { flags: 'a', encoding: 'utf8' });
@@ -46,7 +42,6 @@ try {
   };
   process.on('exit', () => { try { logStream.end(); } catch (e) {} });
 } catch (e) {
-  // Não fatal: se não puder criar o log, continuar normalmente
 }
 
 const CONFIG_PATH = path.resolve(__dirname, '../config.json');
@@ -58,8 +53,6 @@ const COLORS = {
   yellow: '\x1b[33m',
   red: '\x1b[31m',
 };
-
-const deletedArchivePaths = new Set();
 
 function createProgressBar(current, total, width = 30) {
   const filledWidth = total === 0 ? width : Math.round((width * current) / total);
@@ -79,8 +72,18 @@ function formatBytes(bytes) {
   return `${size.toFixed(2)} ${units[unitIndex]}`;
 }
 
+function truncateText(text, maxLen) {
+  if (text.length <= maxLen) return text;
+  return text.substring(0, maxLen - 3) + '...';
+}
+
 function clearLine() {
-  process.stdout.write('\r\x1b[K');
+  if (process.stdout.isTTY) {
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+  } else {
+    process.stdout.write('\n');
+  }
 }
 
 function loadConfig() {
@@ -124,7 +127,6 @@ function find7zExecutable(preferredPath) {
     console.log(`Using configured 7-Zip: ${preferredPath}`);
     return preferredPath;
   }
-  // Prefer system 7-Zip installations (full feature set) before the bundled 7za
   const candidates = [];
   if (process.env.PATH) {
     const pathEntries = process.env.PATH.split(path.delimiter);
@@ -161,9 +163,7 @@ function find7zExecutable(preferredPath) {
       return '7z';
     }
   } catch (e) {
-    // ignore
   }
-  // Fallback to bundled 7za if present
   if (path7za && fs.existsSync(path7za)) {
     console.log(`Using bundled 7-Zip: ${path7za}`);
     return path7za;
@@ -176,14 +176,12 @@ function findUnrarExecutable(preferredPath) {
   if (preferredPath && fs.existsSync(preferredPath)) {
     return preferredPath;
   }
-  // Check project-local tools folder first
   try {
     const toolsDir = path.join(__dirname, '..', 'tools');
     const projectUnrar = path.join(toolsDir, 'UnRAR.exe');
     const projectUnrarLower = path.join(toolsDir, 'unrar.exe');
     if (fs.existsSync(projectUnrar)) return projectUnrar;
     if (fs.existsSync(projectUnrarLower)) return projectUnrarLower;
-    // Accept variants like unrarw64.exe, unrarx64.exe, etc.
     if (fs.existsSync(toolsDir)) {
       const candidates = fs.readdirSync(toolsDir).filter((n) => /^(unrar)[^\\/]*\.exe$/i.test(n));
       if (candidates.length > 0) return path.join(toolsDir, candidates[0]);
@@ -216,7 +214,7 @@ async function extractArchiveWith7z(archivePath, outDir, executable) {
   const execPath = executable || '7z';
   const resolved = resolveExecutable(execPath) || path7za || execPath;
 
-  const args = ['x', '-y', `-o${outDir}`, archivePath, '-bsp1']; // -bsp1 sends progress to stdout
+  const args = ['x', '-y', `-o${outDir}`, archivePath, '-bsp1'];
 
   return new Promise((resolve, reject) => {
     let lastPercent = 0;
@@ -227,6 +225,9 @@ async function extractArchiveWith7z(archivePath, outDir, executable) {
     } catch (err) {
       return reject(err);
     }
+
+    const maxNameWidth = 40;
+    const displayName = truncateText(path.basename(archivePath), maxNameWidth);
 
     child.stdout.on('data', (chunk) => {
       try {
@@ -240,16 +241,14 @@ async function extractArchiveWith7z(archivePath, outDir, executable) {
             lastPercent = pct;
             const bar = createProgressBar(pct, 100, 30);
             clearLine();
-            process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${path.basename(archivePath)} ${bar} ${pct}%`);
+            process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${displayName} ${bar} ${pct}%`);
           }
         }
       } catch (e) {
-        // ignore parse errors
       }
     });
 
     child.stderr.on('data', (chunk) => {
-      // 7z may emit progress on stderr depending on platform/config; parse similarly
       try {
         const s = chunk.toString('utf8');
         const matches = s.match(/(\d{1,3})%/g);
@@ -260,7 +259,7 @@ async function extractArchiveWith7z(archivePath, outDir, executable) {
             lastPercent = pct;
             const bar = createProgressBar(pct, 100, 30);
             clearLine();
-            process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${path.basename(archivePath)} ${bar} ${pct}%`);
+            process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${displayName} ${bar} ${pct}%`);
           }
         }
       } catch (e) {}
@@ -271,7 +270,6 @@ async function extractArchiveWith7z(archivePath, outDir, executable) {
     });
 
     child.on('close', (code) => {
-      // finalize line
       try { process.stdout.write('\n'); } catch (e) {}
       if (code === 0) return resolve();
       const stdout = stdoutBuffer || '';
@@ -300,7 +298,6 @@ function resolveExecutable(name) {
       }
     }
   } catch (e) {
-    // ignore
   }
   return null;
 }
@@ -315,7 +312,6 @@ function extractZipWithPowershell(archivePath, outDir) {
 
 async function extractZipWithNode(archivePath, outDir) {
   fs.mkdirSync(outDir, { recursive: true });
-  // Prefer adm-zip (synchronous) if available
   if (AdmZip) {
     const zip = new AdmZip(archivePath);
     zip.extractAllTo(outDir, true);
@@ -329,14 +325,26 @@ async function extractZipWithNode(archivePath, outDir) {
 }
 
 function wrapPathForPowershell(p) {
-  // Escapa aspas simples e envolve entre aspas simples para o PowerShell
   return `\'${p.replace(/'/g, "''")}\'`;
+}
+
+function toNamespacedPath(p) {
+  if (process.platform === 'win32' && typeof p === 'string') {
+    return path.toNamespacedPath(p);
+  }
+  return p;
 }
 
 function findFilesRecursively(dir, exts) {
   const results = [];
-  if (!fs.existsSync(dir)) return results;
-  const items = fs.readdirSync(dir, { withFileTypes: true });
+  const nsDir = toNamespacedPath(dir);
+  if (!fs.existsSync(nsDir)) return results;
+  let items;
+  try {
+    items = fs.readdirSync(nsDir, { withFileTypes: true });
+  } catch (e) {
+    return results;
+  }
   for (const it of items) {
     const p = path.join(dir, it.name);
     if (it.isDirectory()) {
@@ -361,12 +369,13 @@ function extractRarWithUnrar(archivePath, outDir) {
     }
     fs.mkdirSync(outDir, { recursive: true });
     try {
+      const maxNameWidth = 40;
+      const displayName = truncateText(path.basename(archivePath), maxNameWidth);
       const options = {
         onProgress: (p) => {
           try {
             let pct = 0;
             if (typeof p === 'number') {
-              // se p for fração 0..1
               pct = p > 0 && p <= 1 ? Math.round(p * 100) : Math.round(p);
             } else if (p && typeof p.percent === 'number') {
               pct = Math.round(p.percent);
@@ -374,7 +383,7 @@ function extractRarWithUnrar(archivePath, outDir) {
             if (pct >= 0) {
               const bar = createProgressBar(pct, 100, 30);
               clearLine();
-              process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${path.basename(archivePath)} ${bar} ${pct}%`);
+              process.stdout.write(`${COLORS.cyan}Extraindo:${COLORS.reset} ${displayName} ${bar} ${pct}%`);
             }
           } catch (e) {}
         },
@@ -393,135 +402,6 @@ function extractRarWithUnrar(archivePath, outDir) {
   });
 }
 
-async function extractArchivesAndCollectIsos(isoDir) {
-  const archiveExts = ['.zip', '.rar', '.7z', '.tar', '.tar.gz', '.tgz'];
-  const results = [];
-  if (!fs.existsSync(isoDir)) return { isos: results, tempBase: null };
-
-  const files = fs.readdirSync(isoDir);
-  const archives = files.filter((f) => {
-    const lower = f.toLowerCase();
-    return archiveExts.some((ext) => lower.endsWith(ext));
-  }).map((f) => path.join(isoDir, f));
-
-  if (archives.length === 0) return { isos: results, tempBase: null };
-
-  const tempBase = fs.mkdtempSync(path.join(os.tmpdir(), 'extract-xiso-'));
-  const config = loadConfig();
-  const sevenZipExe = find7zExecutable(config.sevenZipPath);
-  const have7z = Boolean(sevenZipExe);
-  if (!have7z) {
-    console.log('Aviso: 7z nao encontrado no PATH — tentaremos fallback para arquivos .zip usando PowerShell Expand-Archive quando possivel. Outros formatos serao ignorados.');
-  }
-
-  for (const arch of archives) {
-    const archExt = path.extname(arch).toLowerCase();
-    const archName = path.basename(arch);
-    try {
-      const name = path.basename(arch, path.extname(arch));
-      const outDir = path.join(tempBase, name);
-      console.log(`Extraindo arquivo compactado: ${arch} -> ${outDir}`);
-      
-      let extracted = false;
-      let lastError = null;
-      
-      // Tentar extrair RAR com unrar.js primeiro, mas evite para arquivos muito grandes
-      if (archExt === '.rar' && unrar) {
-        try {
-          const stats = fs.statSync(arch);
-          const sizeLimit = 200 * 1024 * 1024; // 200 MB
-          if (stats.size <= sizeLimit) {
-            await extractRarWithUnrar(arch, outDir);
-            extracted = true;
-          } else {
-            console.log(`RAR muito grande (${formatBytes(stats.size)}). Pulando fallback unrar.js.`);
-          }
-        } catch (err) {
-          console.warn(`Falha ao extrair RAR com unrar.js: ${err.message}`);
-          lastError = err;
-        }
-      }
-      
-      // Estratégia de extração com 7z
-      if (!extracted && have7z) {
-        try {
-          await extractArchiveWith7z(arch, outDir, sevenZipExe);
-          extracted = true;
-        } catch (err) {
-          lastError = err;
-          // Mensagem genérica para falha no 7z
-          console.warn(`Falha ao extrair ${archName} com ${sevenZipExe || '7z'}: ${err.message}`);
-        }
-      }
-
-      // Se ainda não extraído e for RAR, tentar fallback para unrar CLI se disponível
-          if (!extracted && archExt === '.rar') {
-            // Prefer resolved executable (checks tools/ and PATH)
-            const unrarExe = resolveExecutable(config.unrarPath || 'unrar') || findUnrarExecutable(config.unrarPath);
-            if (unrarExe) {
-              try {
-                console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via ${path.basename(unrarExe)})`);
-                const res = spawnSync(unrarExe, ['x', '-y', arch, outDir], { stdio: 'inherit' });
-                if (res.error) throw res.error;
-                if (res.status === 0) {
-                  extracted = true;
-                } else {
-                  console.warn(`unrar returned code ${res.status}`);
-                }
-              } catch (err) {
-                console.warn(`Falha ao extrair com unrar CLI: ${err.message}`);
-              }
-            } else {
-              console.warn('Nenhum UnRAR CLI encontrado (procure por tools/UnRAR.exe ou instale UnRAR/WinRAR no sistema).');
-              console.warn('Consulte tools/README-unrar.md para instruções de obtenção de um UnRAR portátil.');
-            }
-      }
-      
-      // ZIP extraction: use Node-native extractor when available, otherwise fallback to PowerShell if 7z is unavailable
-      if (!extracted && archExt === '.zip') {
-        if (AdmZip || decompress) {
-          try {
-            console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via Node)`);
-            await extractZipWithNode(arch, outDir);
-            extracted = true;
-          } catch (err) {
-            console.warn(`Falha ao extrair ZIP com Node: ${err.message}`);
-            // continue to other fallbacks
-          }
-        }
-        if (!extracted && !have7z) {
-          try {
-            console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via PowerShell)`);
-            extractZipWithPowershell(arch, outDir);
-            extracted = true;
-          } catch (err) {
-            console.warn(`Falha no fallback PowerShell para ${archName}: ${err.message}`);
-          }
-        }
-      }
-      
-      // Se conseguiu extrair, procurar por ISOs
-      if (extracted) {
-        const isos = findFilesRecursively(outDir, ['.iso', '.xiso']);
-        if (isos.length > 0) {
-          console.log(`Encontrados ${isos.length} arquivo(s) ISO/XISO em ${archName}`);
-          for (const p of isos) {
-            results.push({ isoPath: path.resolve(p), source: 'archive', archivePath: arch });
-          }
-        } else {
-          console.warn(`Nenhum arquivo ISO/XISO encontrado dentro de ${archName}`);
-        }
-      } else {
-        console.warn(`Não foi possível extrair ${archName}. Formato pode não ser suportado.`);
-      }
-    } catch (err) {
-      console.warn(`Falha ao processar ${archName}: ${err.message}`);
-    }
-  }
-
-  return { isos: results, tempBase };
-}
-
 function sanitizeFolderName(name) {
   return name
     .replace(/[^\w\s-]/g, '')
@@ -529,146 +409,179 @@ function sanitizeFolderName(name) {
     .trim();
 }
 
-async function extractWithProgress(isoObj, outputDir, index, total, numWorkers) {
-  const config = loadConfig();
-  const isoPath = isoObj.isoPath;
+async function extractArchiveToTemp(archivePath, tempDir, config, sevenZipExe) {
+  const archExt = path.extname(archivePath).toLowerCase();
+  const archName = path.basename(archivePath);
+
+  fs.mkdirSync(tempDir, { recursive: true });
+  console.log(`Extraindo arquivo compactado: ${archName}`);
+
+  let extracted = false;
+  let lastError = null;
+
+  if (archExt === '.rar' && unrar) {
+    try {
+      const stats = fs.statSync(archivePath);
+      const sizeLimit = 200 * 1024 * 1024;
+      if (stats.size <= sizeLimit) {
+        await extractRarWithUnrar(archivePath, tempDir);
+        extracted = true;
+      } else {
+        console.log(`RAR muito grande (${formatBytes(stats.size)}). Pulando fallback unrar.js.`);
+      }
+    } catch (err) {
+      console.warn(`Falha ao extrair RAR com unrar.js: ${err.message}`);
+      lastError = err;
+    }
+  }
+
+  if (!extracted && sevenZipExe) {
+    try {
+      await extractArchiveWith7z(archivePath, tempDir, sevenZipExe);
+      extracted = true;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Falha ao extrair ${archName} com 7-Zip: ${err.message}`);
+    }
+  }
+
+  if (!extracted && archExt === '.rar') {
+    const unrarExe = resolveExecutable(config.unrarPath || 'unrar') || findUnrarExecutable(config.unrarPath);
+    if (unrarExe) {
+      try {
+        console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via ${path.basename(unrarExe)})`);
+        const res = spawnSync(unrarExe, ['x', '-y', archivePath, tempDir], { stdio: 'inherit' });
+        if (res.error) throw res.error;
+        if (res.status === 0) {
+          extracted = true;
+        } else {
+          console.warn(`unrar returned code ${res.status}`);
+        }
+      } catch (err) {
+        console.warn(`Falha ao extrair com unrar CLI: ${err.message}`);
+      }
+    } else {
+      console.warn('Nenhum UnRAR CLI encontrado (procure por tools/UnRAR.exe ou instale UnRAR/WinRAR no sistema).');
+    }
+  }
+
+  if (!extracted && archExt === '.zip') {
+    if (AdmZip || decompress) {
+      try {
+        console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via Node)`);
+        await extractZipWithNode(archivePath, tempDir);
+        extracted = true;
+      } catch (err) {
+        console.warn(`Falha ao extrair ZIP com Node: ${err.message}`);
+      }
+    }
+    if (!extracted && !sevenZipExe) {
+      try {
+        console.log(`${COLORS.cyan}Extraindo:${COLORS.reset} ${archName} (via PowerShell)`);
+        extractZipWithPowershell(archivePath, tempDir);
+        extracted = true;
+      } catch (err) {
+        console.warn(`Falha no fallback PowerShell para ${archName}: ${err.message}`);
+      }
+    }
+  }
+
+  return extracted;
+}
+
+async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, config) {
   const basename = path.basename(isoPath, path.extname(isoPath));
   const sanitizedName = sanitizeFolderName(basename);
-  const targetDir = config.outputDir
+  const finalDir = targetDir || (config.outputDir
     ? path.join(config.outputDir, sanitizedName)
-    : path.join(path.dirname(isoPath), sanitizedName);
-    console.log(
+    : path.join(path.dirname(isoPath), sanitizedName));
+
+  console.log(
     `${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename}`,
   );
 
+  const stats = fs.statSync(isoPath);
+  const isoSize = stats.size;
+
+  let listing = [];
+  try {
+    listing = extractXiso.listXisoSync(isoPath, { skipSystemUpdate: config.deleteSystemUpdate });
+  } catch (e) {
+    listing = [];
+  }
+  const totalBytes = listing.filter((it) => it.type === 'file').reduce((acc, it) => acc + (it.size || 0), 0);
+  let totalExtracted = 0;
+  const perFileProgress = new Map();
+
+  extractXiso.setProgressCallback((progress) => {
     try {
-    const stats = fs.statSync(isoPath);
-    const isoSize = stats.size;
-    let lastPercent = 0;
-
-    // Build overall progress using total bytes from listing to avoid per-file reset.
-    let listing = [];
-    try {
-      listing = extractXiso.listXisoSync(isoPath, { skipSystemUpdate: config.deleteSystemUpdate });
-    } catch (e) {
-      listing = [];
-    }
-    const totalBytes = listing.filter((it) => it.type === 'file').reduce((acc, it) => acc + (it.size || 0), 0);
-    let totalExtracted = 0;
-    const perFileProgress = new Map();
-
-    extractXiso.setProgressCallback((progress) => {
-      try {
-        if (progress.type === 'fileStart') {
-          perFileProgress.set(progress.path, 0);
-          // initial overall display
-          const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
-          const overallBar = createProgressBar(overallPct, 100, 30);
-          clearLine();
-          process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
-          return;
-        }
-
-        if (progress.type === 'fileProgress') {
-          const last = perFileProgress.get(progress.path) || 0;
-          const delta = Math.max(0, progress.extracted - last);
-          if (delta > 0) {
-            totalExtracted += delta;
-            perFileProgress.set(progress.path, progress.extracted);
-          }
-          const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
-          const overallBar = createProgressBar(overallPct, 100, 30);
-          clearLine();
-          process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
-        }
-
-        if (progress.type === 'fileComplete') {
-          perFileProgress.set(progress.path, progress.size || perFileProgress.get(progress.path) || 0);
-          const prev = perFileProgress.get(progress.path) || 0;
-          // ensure totalExtracted accounts for any missing delta (edge cases)
-          if (prev > totalExtracted) totalExtracted = prev; // safe guard
-          const overallPct = totalBytes === 0 ? 100 : Math.round((totalExtracted / totalBytes) * 100);
-          const overallBar = createProgressBar(overallPct, 100, 30);
-          clearLine();
-          process.stdout.write(`${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
-        }
-      } catch (e) {
-        // ignore progress display errors
+      if (progress.type === 'fileStart') {
+        perFileProgress.set(progress.path, 0);
+        const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
+        const overallBar = createProgressBar(overallPct, 100, 30);
+        clearLine();
+        process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+        return;
       }
+
+      if (progress.type === 'fileProgress') {
+        const last = perFileProgress.get(progress.path) || 0;
+        const delta = Math.max(0, progress.extracted - last);
+        if (delta > 0) {
+          totalExtracted += delta;
+          perFileProgress.set(progress.path, progress.extracted);
+        }
+        const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
+        const overallBar = createProgressBar(overallPct, 100, 30);
+        clearLine();
+        process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+      }
+
+      if (progress.type === 'fileComplete') {
+        perFileProgress.set(progress.path, progress.size || perFileProgress.get(progress.path) || 0);
+        const prev = perFileProgress.get(progress.path) || 0;
+        if (prev > totalExtracted) totalExtracted = prev;
+        const overallPct = totalBytes === 0 ? 100 : Math.round((totalExtracted / totalBytes) * 100);
+        const overallBar = createProgressBar(overallPct, 100, 30);
+        clearLine();
+        process.stdout.write(`${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+      }
+    } catch (e) {
+    }
+  });
+
+  const startTime = Date.now();
+  let result;
+
+  try {
+    result = await extractXiso.extractXisoParallel(isoPath, finalDir, {
+      skipSystemUpdate: config.deleteSystemUpdate,
+      numWorkers,
     });
+  } catch (e) {
+    if (e && e.stack) console.error(e.stack);
+    throw e;
+  }
 
-    const startTime = Date.now();
-    console.log('DEBUG: calling extractXisoParallel', { isoPath, targetDir, numWorkers });
-    let result;
-    let extractionSucceeded = false;
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+  const speed = (isoSize / (1024 * 1024) / duration).toFixed(2);
 
-    try {
-      result = await extractXiso.extractXisoParallel(isoPath, targetDir, {
-        skipSystemUpdate: config.deleteSystemUpdate,
-        numWorkers,
-      });
-      extractionSucceeded = true;
-    } catch (e) {
-      console.error('DEBUG: caught error from extractXisoParallel. typeof:', typeof e);
-      try {
-        console.error('DEBUG: error (stringified):', JSON.stringify(e, Object.getOwnPropertyNames(e)));
-      } catch (jsonErr) {
-        console.error('DEBUG: error stringify failed:', jsonErr && jsonErr.message);
-      }
-      if (e && e.stack) console.error(e.stack);
-      throw e;
-    }
-
-    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    const speed = (isoSize / (1024 * 1024) / duration).toFixed(2);
-
-    // Apagar fonte somente se configurado e se a extração foi bem-sucedida
-    if (config.deleteIsoAfterExtract && extractionSucceeded) {
-      try {
-        if (isoObj.source === 'archive' && isoObj.archivePath) {
-          if (!deletedArchivePaths.has(isoObj.archivePath)) {
-            fs.unlinkSync(isoObj.archivePath);
-            deletedArchivePaths.add(isoObj.archivePath);
-            console.log(`${COLORS.yellow}Arquivo compactado removido:${COLORS.reset} ${isoObj.archivePath}`);
-          }
-        } else {
-          fs.unlinkSync(isoPath);
-          console.log(`${COLORS.yellow}Arquivo ISO removido:${COLORS.reset} ${isoPath}`);
-        }
-      } catch (err) {
-        console.warn(`${COLORS.red}Falha ao apagar arquivo fonte:${COLORS.reset} ${err.message}`);
-      }
-    }
-
-    // Sanitizar nomes de arquivos extraidos para remover caracteres corrompidos
+  if (result && result.outputDir) {
     try {
       const sanitizer = require('./sanitize-extracted-filenames');
       try {
         sanitizer.sanitizeDirectory(result.outputDir);
-        console.log(`${COLORS.cyan}Nomes sanitizados em:${COLORS.reset} ${result.outputDir}`);
       } catch (e) {
-        console.warn(`Falha ao sanitizar nomes: ${e && e.message}`);
       }
     } catch (e) {
-      // se o módulo nao existir, ignorar
     }
-
-    clearLine();
-    console.log(
-      `${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} - ${result.items.length} itens extraídos em ${duration}s (${speed} MB/s)`,
-    );
-    return result;
-  } catch (error) {
-    clearLine();
-    console.log(
-      `${COLORS.red}✗ [${index}/${total}]${COLORS.reset} Erro ao extrair ${basename}: ${error.message}`,
-    );
-    // Mostrar stack completa para depuração
-    if (error && error.stack) {
-      console.error(error.stack);
-    }
-    throw error;
   }
+
+  clearLine();
+  console.log(
+    `${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} - ${result.items.length} itens extraídos em ${duration}s (${speed} MB/s)`,
+  );
+  return result;
 }
 
 async function main() {
@@ -684,56 +597,133 @@ async function main() {
     console.log(`  ISO Dir: ${config.isoDir}`);
     console.log(`  Saída: ${config.outputDir ? config.outputDir : 'mesma pasta do arquivo ISO'}`);
     console.log(`  Apagar $SystemUpdate: ${config.deleteSystemUpdate ? 'Sim' : 'Não'}`);
-    console.log(`  Apagar ISO após extração: ${config.deleteIsoAfterExtract ? 'Sim' : 'Não'} (inclui também arquivos compactados)`);
+    console.log(`  Apagar ISO após extração: ${config.deleteIsoAfterExtract ? 'Sim' : 'Não'}`);
     console.log();
   }
 
-  // Procurar ISOs e também dentro de arquivos compactados
+  const sevenZipExe = find7zExecutable(config.sevenZipPath);
+  const have7z = Boolean(sevenZipExe);
+  if (!have7z) {
+    console.log('Aviso: 7z nao encontrado no PATH — tentaremos fallback para .zip com PowerShell. Outros formatos serao ignorados.');
+  }
+
   const nativePaths = findAllXisos(config.isoDir);
   const nativeXisos = nativePaths.map((p) => ({ isoPath: path.resolve(p), source: 'native' }));
-  const archiveResult = await extractArchivesAndCollectIsos(config.isoDir); // returns { isos, tempBase }
-  const archiveXisos = archiveResult.isos || [];
-  const tempBase = archiveResult.tempBase || null;
-  const xisos = nativeXisos.concat(archiveXisos);
 
-  if (xisos.length === 0) {
-    console.log(`${COLORS.yellow}Nenhum arquivo .iso ou .xiso encontrado em "${config.isoDir}"${COLORS.reset}`);
-    console.log(`${COLORS.cyan}Coloque seus arquivos .iso ou .xiso nessa pasta e execute novamente.${COLORS.reset}`);
-    // sinaliza falha para o caller (batch) quando não há arquivos para processar
+  const archiveExts = ['.zip', '.rar', '.7z', '.tar', '.tar.gz', '.tgz'];
+  let archives = [];
+  if (fs.existsSync(config.isoDir)) {
+    const files = fs.readdirSync(config.isoDir);
+    archives = files.filter((f) => {
+      const lower = f.toLowerCase();
+      return archiveExts.some((ext) => lower.endsWith(ext));
+    }).map((f) => path.join(config.isoDir, f));
+  }
+
+  const totalExpected = nativeXisos.length + archives.length;
+  if (totalExpected === 0) {
+    console.log(`${COLORS.yellow}Nenhum arquivo .iso/.xiso ou compactado encontrado em "${config.isoDir}"${COLORS.reset}`);
+    console.log(`${COLORS.cyan}Coloque seus arquivos nessa pasta e execute novamente.${COLORS.reset}`);
     process.exitCode = 2;
     return;
   }
 
-  console.log(
-    `${COLORS.bright}Encontrados ${COLORS.green}${xisos.length}${COLORS.reset}${COLORS.bright} arquivo(s) .iso/.xiso:${COLORS.reset}\n`,
-  );
-  xisos.forEach((f, i) => {
-    const size = fs.statSync(f.isoPath).size;
-    console.log(`  ${i + 1}. ${path.basename(f.isoPath)} (${formatBytes(size)})`);
-  });
-  console.log();
+  console.log(`${COLORS.bright}Encontrados ${COLORS.green}${nativeXisos.length} ISO(s) nativo(s)${COLORS.reset}${COLORS.bright} e ${COLORS.green}${archives.length} arquivo(s) compactado(s)${COLORS.reset}${COLORS.bright}${COLORS.reset}\n`);
 
-  // Iniciar extração
   const startTime = Date.now();
   let successCount = 0;
   let failCount = 0;
+  let itemIndex = 0;
 
-  for (let i = 0; i < xisos.length; i += 1) {
+  for (const native of nativeXisos) {
+    itemIndex += 1;
     try {
-      await extractWithProgress(xisos[i], null, i + 1, xisos.length, numWorkers);
+      await extractAndConvert(native.isoPath, null, itemIndex, totalExpected, numWorkers, config);
       successCount += 1;
-    } catch {
+
+      if (config.deleteIsoAfterExtract) {
+        try {
+          fs.unlinkSync(native.isoPath);
+          console.log(`${COLORS.yellow}ISO removido:${COLORS.reset} ${path.basename(native.isoPath)}`);
+        } catch (err) {
+          console.warn(`${COLORS.red}Falha ao apagar ISO:${COLORS.reset} ${err.message}`);
+        }
+      }
+    } catch (error) {
       failCount += 1;
+      clearLine();
+      console.log(
+        `${COLORS.red}✗ [${itemIndex}/${totalExpected}]${COLORS.reset} Erro ao extrair ${path.basename(native.isoPath)}: ${error.message}`,
+      );
     }
   }
 
-  // limpar pasta temporária criada para extrair archives (se existir)
-  if (tempBase) {
+  for (let i = 0; i < archives.length; i += 1) {
+    const arch = archives[i];
+    const archName = path.basename(arch);
+    itemIndex += 1;
+
+    const shortId = `xi_${Date.now().toString(36)}_${i}`;
+    const tempDir = path.join(os.tmpdir(), shortId);
+
+    let archiveDeleted = false;
+
     try {
-      fs.rmSync(tempBase, { recursive: true, force: true });
-      console.log(`${COLORS.cyan}Pastas temporarias removidas: ${tempBase}${COLORS.reset}`);
-    } catch (err) {
-      console.warn(`${COLORS.red}Falha ao limpar temporarios:${COLORS.reset} ${err.message}`);
+      const extracted = await extractArchiveToTemp(arch, tempDir, config, sevenZipExe);
+      if (!extracted) {
+        console.warn(`Não foi possível extrair ${archName}. Pulando.`);
+        failCount += 1;
+        continue;
+      }
+
+      const isos = findFilesRecursively(tempDir, ['.iso', '.xiso']);
+      if (isos.length === 0) {
+        console.warn(`Nenhum arquivo ISO/XISO encontrado dentro de ${archName}`);
+        failCount += 1;
+        continue;
+      }
+
+      console.log(`Encontrados ${isos.length} arquivo(s) ISO/XISO em ${archName}`);
+
+      for (const isoFile of isos) {
+        try {
+          const isoPath = toNamespacedPath(path.resolve(isoFile));
+          if (!fs.existsSync(isoPath)) {
+            console.warn(`Arquivo ISO não encontrado (caminho muito longo?): ${isoFile}`);
+            continue;
+          }
+          const result = await extractAndConvert(isoPath, null, itemIndex, totalExpected, numWorkers, config);
+
+          if (config.deleteIsoAfterExtract && !archiveDeleted) {
+            try {
+              fs.unlinkSync(arch);
+              archiveDeleted = true;
+              console.log(`${COLORS.yellow}Arquivo compactado removido:${COLORS.reset} ${arch}`);
+            } catch (err) {
+              console.warn(`${COLORS.red}Falha ao apagar arquivo fonte:${COLORS.reset} ${err.message}`);
+            }
+          }
+
+          successCount += 1;
+        } catch (error) {
+          failCount += 1;
+          clearLine();
+          console.log(
+            `${COLORS.red}✗ [${itemIndex}/${totalExpected}]${COLORS.reset} Erro ao extrair ISO de ${archName}: ${error.message}`,
+          );
+        }
+      }
+    } catch (error) {
+      failCount += 1;
+      console.warn(`${COLORS.red}Falha ao processar ${archName}:${COLORS.reset} ${error.message}`);
+    } finally {
+      if (tempDir && fs.existsSync(tempDir)) {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch (err) {
+          console.warn(`${COLORS.red}Falha ao limpar temp:${COLORS.reset} ${err.message}`);
+        }
+      }
     }
   }
 
@@ -745,9 +735,7 @@ async function main() {
   }
   console.log(`${COLORS.cyan}Tempo total: ${totalDuration}s${COLORS.reset}`);
   console.log(`${COLORS.cyan}Pasta de saída: subpastas criadas junto aos arquivos .iso${COLORS.reset}\n`);
-  // Define código de saída: 0 se houve pelo menos uma extração bem-sucedida, 1 caso contrário
   process.exitCode = successCount > 0 ? 0 : 1;
-
 }
 
 main().catch((error) => {
