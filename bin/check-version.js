@@ -76,7 +76,10 @@ function hasGit() {
 
 function gitPull() {
   try {
-    const r = spawnSync('git', ['pull', '--ff-only'], { cwd: projectRoot, stdio: 'inherit' });
+    const remote = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectRoot, encoding: 'utf8' });
+    if (remote.status !== 0) return false;
+    const branch = remote.stdout.trim();
+    const r = spawnSync('git', ['pull', '--ff-only', 'origin', branch], { cwd: projectRoot, stdio: 'inherit' });
     return r.status === 0;
   } catch { return false; }
 }
@@ -203,41 +206,50 @@ async function doUpdate() {
 
 function downloadWithProgress(url, dest) {
   return new Promise((resolve, reject) => {
-    https.get(url, {
-      headers: { 'User-Agent': 'GS-IsoXex', Accept: 'application/octet-stream' },
-    }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        downloadWithProgress(res.headers.location, dest).then(resolve).catch(reject);
-        return;
-      }
-      if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}`));
-        return;
-      }
-      const total = parseInt(res.headers['content-length'] || '0', 10);
-      let downloaded = 0;
-      let lastPct = -1;
-      const file = fs.createWriteStream(dest);
-
-      res.on('data', (chunk) => {
-        downloaded += chunk.length;
-        if (total > 0) {
-          const pct = Math.round((downloaded / total) * 100);
-          if (pct !== lastPct) {
-            lastPct = pct;
-            const bar = createProgressBar(pct);
-            process.stdout.write(`\r\x1b[K${bar} ${pct}%`);
-          }
+    const download = (targetUrl, acceptHeader) => {
+      const options = {
+        headers: { 'User-Agent': 'GS-IsoXex' },
+      };
+      if (acceptHeader) options.headers.Accept = acceptHeader;
+      https.get(targetUrl, options, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          download(res.headers.location, acceptHeader).then(resolve).catch(reject);
+          return;
         }
-      });
+        if (res.statusCode === 415 && acceptHeader) {
+          download(targetUrl, '').then(resolve).catch(reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const total = parseInt(res.headers['content-length'] || '0', 10);
+        let downloaded = 0;
+        let lastPct = -1;
+        const file = fs.createWriteStream(dest);
 
-      res.pipe(file);
-      file.on('finish', () => {
-        process.stdout.write('\n');
-        file.close(resolve);
-      });
-      file.on('error', reject);
-    }).on('error', reject);
+        res.on('data', (chunk) => {
+          downloaded += chunk.length;
+          if (total > 0) {
+            const pct = Math.round((downloaded / total) * 100);
+            if (pct !== lastPct) {
+              lastPct = pct;
+              const bar = createProgressBar(pct);
+              process.stdout.write(`\r\x1b[K${bar} ${pct}%`);
+            }
+          }
+        });
+
+        res.pipe(file);
+        file.on('finish', () => {
+          process.stdout.write('\n');
+          file.close(resolve);
+        });
+        file.on('error', reject);
+      }).on('error', reject);
+    };
+    download(url, 'application/octet-stream');
   });
 }
 
