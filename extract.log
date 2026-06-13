@@ -1,0 +1,53 @@
+[2026-06-13 14:16:08] [1m[36m=== Extract-XISO Node.js v0.1.0 ===[0m
+
+[2026-06-13 14:16:08] [36mConfiguração:[0m
+[2026-06-13 14:16:08]   ISO Dir: C:\Users\gabri\Downloads\Iso
+[2026-06-13 14:16:08]   Saída: F:\JOGOS XBOX 360
+[2026-06-13 14:16:08]   Apagar $SystemUpdate: Sim
+[2026-06-13 14:16:08]   Apagar ISO após extração: Sim
+[2026-06-13 14:16:08] 
+[2026-06-13 14:16:08] Using configured 7-Zip: E:\xex instractor\GS IsoXex\node_modules\7zip-bin\win\x64\7za.exe
+[2026-06-13 14:16:08] [1mEncontrados [32m0 ISO(s) nativo(s)[0m[1m e [32m2 arquivo(s) compactado(s)[0m[1m[0m
+
+[2026-06-13 14:16:08] Extraindo arquivo compactado: Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1).7z
+[2026-06-13 14:17:36] Encontrados 1 arquivo(s) ISO/XISO em Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1).7z
+[2026-06-13 14:22:25] [1m[36m=== Extract-XISO Node.js v0.1.0 ===[0m
+
+[2026-06-13 14:22:25] [36mConfiguração:[0m
+[2026-06-13 14:22:25]   ISO Dir: C:\Users\gabri\Downloads\Iso
+[2026-06-13 14:22:25]   Saída: F:\JOGOS XBOX 360
+[2026-06-13 14:22:25]   Apagar $SystemUpdate: Sim
+[2026-06-13 14:22:25]   Apagar ISO após extração: Sim
+[2026-06-13 14:22:25] 
+[2026-06-13 14:22:25] Using configured 7-Zip: E:\xex instractor\GS IsoXex\node_modules\7zip-bin\win\x64\7za.exe
+[2026-06-13 14:22:25] [1mEncontrados [32m0 ISO(s) nativo(s)[0m[1m e [32m2 arquivo(s) compactado(s)[0m[1m[0m
+
+[2026-06-13 14:22:25] Extraindo arquivo compactado: Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1).7z
+[2026-06-13 14:24:29] Encontrados 1 arquivo(s) ISO/XISO em Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1).7z
+[2026-06-13 14:57:35] [1m[36m=== Extract-XISO Node.js v0.1.0 ===[0m
+
+[2026-06-13 14:57:35] [36mConfiguração:[0m
+[2026-06-13 14:57:35]   ISO Dir: C:\Users\gabri\Downloads\Iso
+[2026-06-13 14:57:35]   Saída: F:\JOGOS XBOX 360
+[2026-06-13 14:57:35]   Apagar $SystemUpdate: Sim
+[2026-06-13 14:57:35]   Apagar ISO após extração: Sim
+[2026-06-13 14:57:35] 
+[2026-06-13 14:57:35] Using configured 7-Zip: E:\xex instractor\GS IsoXex\node_modules\7zip-bin\win\x64\7za.exe
+[2026-06-13 14:57:35] [1mEncontrados [32m0 ISO(s) nativo(s)[0m[1m e [32m2 arquivo(s) compactado(s)[0m[1m[0m
+
+[2026-06-13 14:57:35] Extraindo arquivo compactado: Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1).7z
+[2026-06-13 14:59:10] Encontrados 1 arquivo(s) ISO/XISO em Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1).7z
+[2026-06-13 14:59:10] [36m[1/2][0m [1mConvertendo:[0m Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1) (7.30 GB)
+[2026-06-13 15:04:10] [32m✓ [1/2][0m Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1) - 2117 itens extraídos em 299.85s (24.93 MB/s)
+[2026-06-13 15:04:10] [33mArquivo compactado removido:[0m C:\Users\gabri\Downloads\Iso\Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 1).7z
+[2026-06-13 15:04:11] Extraindo arquivo compactado: Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 2).7z
+[2026-06-13 15:05:50] Encontrados 1 arquivo(s) ISO/XISO em Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 2).7z
+[2026-06-13 15:05:50] [36m[2/2][0m [1mConvertendo:[0m Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 2) (7.30 GB)
+[2026-06-13 15:09:56] [32m✓ [2/2][0m Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 2) - 1753 itens extraídos em 245.50s (30.45 MB/s)
+[2026-06-13 15:09:56] [33mArquivo compactado removido:[0m C:\Users\gabri\Downloads\Iso\Star Wars - The Force Unleashed - Ultimate Sith Edition (USA, Europe) (En,Fr,De,Es,It) (Disc 2).7z
+[2026-06-13 15:09:56] 
+[1m=== Resumo ===[0m
+[2026-06-13 15:09:56] [32mSucesso: 2[0m
+[2026-06-13 15:09:56] [36mTempo total: 740.78s[0m
+[2026-06-13 15:09:56] [36mPasta de saída: subpastas criadas junto aos arquivos .iso[0m
+

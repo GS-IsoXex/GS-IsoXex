@@ -23,6 +23,7 @@ const XISO_ATTRIBUTE_DIR = 0x10;
 const XISO_DWORD_SIZE = 4;
 const READWRITE_BUFFER_SIZE = 0x00200000;
 const CHUNK_SIZE = 0x01000000; // 16 MB
+const MAX_XISO_ENTRIES = 200000; // safety limit to prevent OOM on corrupted ISOs
 
 let progressCallback = null;
 let lastProgressUpdate = 0;
@@ -227,29 +228,54 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
     return offset >= 0 && size >= 0 && offset + size <= isoSize;
   }
 
+  if (!traverseDirectorySync._visitedOffsets) {
+    traverseDirectorySync._visitedOffsets = new Set();
+  }
+  if (traverseDirectorySync._visitedOffsets.has(dirStart)) {
+    return;
+  }
+  traverseDirectorySync._visitedOffsets.add(dirStart);
+
   // Manual stack for in-order BST traversal within a single directory.
   // When a left child is found, save the current entry+right-sibling info
   // on the stack, then descend to the left child position.
   // When a subtree is exhausted, pop from stack and process the deferred entry.
+  const visitedPositions = new Set();
   function processEntry(entry, itemPath) {
     const skipSU = opts.skipSystemUpdate && itemPath.toLowerCase().includes('$systemupdate');
     if (skipSU) return;
 
-    if (entry.attributes & XISO_ATTRIBUTE_DIR) {
-      const dirOffset = entry.startSector * XISO_SECTOR_SIZE + opts.xboxDiscLseek;
-      if (isInBounds(dirOffset, XISO_SECTOR_SIZE)) {
-        if (opts.mode === 'extract') {
-          fs.mkdirSync(path.join(opts.outputDir, itemPath), { recursive: true });
+      if (results.length >= MAX_XISO_ENTRIES) {
+        if (opts.mode === 'list') {
+          throw new Error(`XISO traversal exceeded safety limit of ${MAX_XISO_ENTRIES} entries — the ISO may be corrupted`);
         }
-        results.push({ type: 'directory', path: itemPath, size: 0 });
-        traverseDirectorySync(fd, dirOffset, itemPath, opts, results);
+        // In extract mode, continue extraction but stop collecting results
+        if (entry.attributes & XISO_ATTRIBUTE_DIR) {
+          const dirOffset = entry.startSector * XISO_SECTOR_SIZE + opts.xboxDiscLseek;
+          if (isInBounds(dirOffset, XISO_SECTOR_SIZE)) {
+            fs.mkdirSync(path.join(opts.outputDir, itemPath), { recursive: true });
+            traverseDirectorySync(fd, dirOffset, itemPath, opts, results);
+          }
+        } else {
+          extractFileSync(fd, entry.startSector, entry.fileSize, opts.outputDir, itemPath, opts.xboxDiscLseek);
+        }
+        return;
       }
-    } else {
-      if (opts.mode === 'extract') {
-        extractFileSync(fd, entry.startSector, entry.fileSize, opts.outputDir, itemPath, opts.xboxDiscLseek);
+      if (entry.attributes & XISO_ATTRIBUTE_DIR) {
+        const dirOffset = entry.startSector * XISO_SECTOR_SIZE + opts.xboxDiscLseek;
+        if (isInBounds(dirOffset, XISO_SECTOR_SIZE)) {
+          if (opts.mode === 'extract') {
+            fs.mkdirSync(path.join(opts.outputDir, itemPath), { recursive: true });
+          }
+          results.push({ type: 'directory', path: itemPath, size: 0 });
+          traverseDirectorySync(fd, dirOffset, itemPath, opts, results);
+        }
+      } else {
+        if (opts.mode === 'extract') {
+          extractFileSync(fd, entry.startSector, entry.fileSize, opts.outputDir, itemPath, opts.xboxDiscLseek);
+        }
+        results.push({ type: 'file', path: itemPath, size: entry.fileSize, startSector: entry.startSector });
       }
-      results.push({ type: 'file', path: itemPath, size: entry.fileSize, startSector: entry.startSector });
-    }
   }
 
   const stack = [];
@@ -263,6 +289,11 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
       if (!isInBounds(pos, XISO_TABLE_OFFSET_SIZE)) {
         break outer;
       }
+
+      if (visitedPositions.has(pos)) {
+        break outer;
+      }
+      visitedPositions.add(pos);
 
       const tmpBuffer = readBufferSync(fd, XISO_TABLE_OFFSET_SIZE, pos);
       let tmp = tmpBuffer.readUInt16LE(0);
@@ -369,6 +400,7 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
 }
 
 function listXisoSync(isoPath, options = {}) {
+  traverseDirectorySync._visitedOffsets = new Set();
   const verified = verifyXisoSync(isoPath);
   try {
     const rootDirStart = verified.rootDirSector * XISO_SECTOR_SIZE + verified.xboxDiscLseek;
@@ -388,6 +420,7 @@ function listXisoSync(isoPath, options = {}) {
 }
 
 function extractXisoSync(isoPath, destinationDir, options = {}) {
+  traverseDirectorySync._visitedOffsets = new Set();
   const verified = verifyXisoSync(isoPath);
   try {
     let outputDir = destinationDir;
@@ -517,6 +550,7 @@ function createWorkerPool(numWorkers = os.cpus().length) {
 }
 
 async function extractXisoParallel(isoPath, destinationDir, options = {}) {
+  traverseDirectorySync._visitedOffsets = new Set();
   const verified = verifyXisoSync(isoPath);
   try {
     let outputDir = destinationDir;

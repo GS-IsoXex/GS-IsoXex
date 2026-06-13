@@ -28,16 +28,22 @@ try {
 }
 
 const LOG_PATH = path.resolve(__dirname, '../extract.log');
+function timestamp() {
+  const d = new Date();
+  return d.toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
+}
 try {
   const logStream = fs.createWriteStream(LOG_PATH, { flags: 'a', encoding: 'utf8' });
   const origLog = console.log.bind(console);
   const origError = console.error.bind(console);
   console.log = (...args) => {
-    try { logStream.write(args.join(' ') + '\n'); } catch (e) {}
+    const line = `[${timestamp()}] ${args.join(' ')}`;
+    try { logStream.write(line + '\n'); } catch (e) {}
     origLog(...args);
   };
   console.error = (...args) => {
-    try { logStream.write(args.join(' ') + '\n'); } catch (e) {}
+    const line = `[${timestamp()}] ${args.join(' ')}`;
+    try { logStream.write(line + '\n'); } catch (e) {}
     origError(...args);
   };
   process.on('exit', () => { try { logStream.end(); } catch (e) {} });
@@ -61,6 +67,16 @@ function createProgressBar(current, total, width = 30) {
   return `[${bar}]`;
 }
 
+function formatETA(seconds) {
+  if (!isFinite(seconds) || seconds < 0) return '--:--';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
 function formatBytes(bytes) {
   const units = ['B', 'KB', 'MB', 'GB'];
   let size = bytes;
@@ -78,12 +94,8 @@ function truncateText(text, maxLen) {
 }
 
 function clearLine() {
-  if (process.stdout.isTTY) {
-    readline.clearLine(process.stdout, 0);
-    readline.cursorTo(process.stdout, 0);
-  } else {
-    process.stdout.write('\n');
-  }
+  readline.cursorTo(process.stdout, 0);
+  readline.clearLine(process.stdout, 0);
 }
 
 function loadConfig() {
@@ -496,31 +508,47 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
     ? path.join(config.outputDir, sanitizedName)
     : path.join(path.dirname(isoPath), sanitizedName));
 
+  const nsPath = toNamespacedPath(isoPath);
+  const errMsg = `Não foi possível acessar o arquivo ISO: ${basename}`;
+  let isoSize;
+  let fd;
+  try {
+    fd = fs.openSync(nsPath, 'r');
+    isoSize = fs.fstatSync(fd).size;
+    fs.closeSync(fd);
+    fd = null;
+  } catch (e) {
+    if (fd) { try { fs.closeSync(fd); } catch (_) {} }
+    try {
+      fd = fs.openSync(isoPath, 'r');
+      isoSize = fs.fstatSync(fd).size;
+      fs.closeSync(fd);
+      fd = null;
+    } catch (e2) {
+      throw new Error(`${errMsg} — ${e2.message}`);
+    }
+  }
+  if (!isoSize || isoSize === 0) {
+    throw new Error(`${errMsg} — arquivo vazio (0 bytes)`);
+  }
+
   console.log(
-    `${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename}`,
+    `${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} (${formatBytes(isoSize)})`,
   );
 
-  const stats = fs.statSync(isoPath);
-  const isoSize = stats.size;
-
-  let listing = [];
-  try {
-    listing = extractXiso.listXisoSync(isoPath, { skipSystemUpdate: config.deleteSystemUpdate });
-  } catch (e) {
-    listing = [];
-  }
-  const totalBytes = listing.filter((it) => it.type === 'file').reduce((acc, it) => acc + (it.size || 0), 0);
   let totalExtracted = 0;
+  let lastProgressUpdate = 0;
+  const PROGRESS_THROTTLE_MS = 200;
   const perFileProgress = new Map();
 
   extractXiso.setProgressCallback((progress) => {
     try {
       if (progress.type === 'fileStart') {
         perFileProgress.set(progress.path, 0);
-        const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
-        const overallBar = createProgressBar(overallPct, 100, 30);
+        const overallPct = isoSize === 0 ? 0 : Math.round((totalExtracted / isoSize) * 100);
+        const bar = createProgressBar(overallPct, 100, 30);
         clearLine();
-        process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+        process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${bar} ${overallPct}%`);
         return;
       }
 
@@ -531,20 +559,31 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
           totalExtracted += delta;
           perFileProgress.set(progress.path, progress.extracted);
         }
-        const overallPct = totalBytes === 0 ? 0 : Math.round((totalExtracted / totalBytes) * 100);
-        const overallBar = createProgressBar(overallPct, 100, 30);
+        const now = Date.now();
+        if (now - lastProgressUpdate < PROGRESS_THROTTLE_MS) return;
+        lastProgressUpdate = now;
+        const overallPct = isoSize === 0 ? 0 : Math.round((totalExtracted / isoSize) * 100);
+        const bar = createProgressBar(overallPct, 100, 30);
+        const elapsed = (Date.now() - startTime) / 1000;
+        const spd = totalExtracted / (elapsed || 0.001);
+        const remaining = isoSize - totalExtracted;
+        const eta = formatETA(remaining / (spd || 0.001));
         clearLine();
-        process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+        process.stdout.write(`${COLORS.cyan}[${index}/${total}]${COLORS.reset} ${COLORS.bright}Convertendo:${COLORS.reset} ${basename} ${bar} ${overallPct}% ${COLORS.yellow}ETA: ${eta}${COLORS.reset} ${COLORS.cyan}${formatBytes(spd)}/s${COLORS.reset}`);
       }
 
       if (progress.type === 'fileComplete') {
         perFileProgress.set(progress.path, progress.size || perFileProgress.get(progress.path) || 0);
         const prev = perFileProgress.get(progress.path) || 0;
         if (prev > totalExtracted) totalExtracted = prev;
-        const overallPct = totalBytes === 0 ? 100 : Math.round((totalExtracted / totalBytes) * 100);
-        const overallBar = createProgressBar(overallPct, 100, 30);
+        const overallPct = isoSize === 0 ? 100 : Math.round((totalExtracted / isoSize) * 100);
+        const bar = createProgressBar(overallPct, 100, 30);
+        const elapsed = (Date.now() - startTime) / 1000;
+        const spd = totalExtracted / (elapsed || 0.001);
+        const remaining = isoSize - totalExtracted;
+        const eta = remaining > 0 ? formatETA(remaining / (spd || 0.001)) : '0s';
         clearLine();
-        process.stdout.write(`${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} ${overallBar} ${overallPct}%`);
+        process.stdout.write(`${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} ${bar} ${overallPct}% ${COLORS.yellow}ETA: ${eta}${COLORS.reset} ${COLORS.cyan}${formatBytes(spd)}/s${COLORS.reset}`);
       }
     } catch (e) {
     }
@@ -554,17 +593,18 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
   let result;
 
   try {
-    result = await extractXiso.extractXisoParallel(isoPath, finalDir, {
+    result = await extractXiso.extractXisoSync(isoPath, finalDir, {
       skipSystemUpdate: config.deleteSystemUpdate,
-      numWorkers,
     });
   } catch (e) {
     if (e && e.stack) console.error(e.stack);
     throw e;
+  } finally {
+    extractXiso.setProgressCallback(null);
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-  const speed = (isoSize / (1024 * 1024) / duration).toFixed(2);
+  const spd = (isoSize / (1024 * 1024) / duration).toFixed(2);
 
   if (result && result.outputDir) {
     try {
@@ -579,7 +619,7 @@ async function extractAndConvert(isoPath, targetDir, index, total, numWorkers, c
 
   clearLine();
   console.log(
-    `${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} - ${result.items.length} itens extraídos em ${duration}s (${speed} MB/s)`,
+    `${COLORS.green}✓ [${index}/${total}]${COLORS.reset} ${basename} - ${result.items.length} itens extraídos em ${duration}s (${spd} MB/s)`,
   );
   return result;
 }
@@ -687,12 +727,12 @@ async function main() {
 
       for (const isoFile of isos) {
         try {
-          const isoPath = toNamespacedPath(path.resolve(isoFile));
-          if (!fs.existsSync(isoPath)) {
-            console.warn(`Arquivo ISO não encontrado (caminho muito longo?): ${isoFile}`);
+          const isoRegular = path.resolve(isoFile);
+          if (!fs.existsSync(toNamespacedPath(isoRegular))) {
+            console.warn(`Arquivo ISO não encontrado em: ${isoFile}`);
             continue;
           }
-          const result = await extractAndConvert(isoPath, null, itemIndex, totalExpected, numWorkers, config);
+          const result = await extractAndConvert(isoRegular, null, itemIndex, totalExpected, numWorkers, config);
 
           if (config.deleteIsoAfterExtract && !archiveDeleted) {
             try {

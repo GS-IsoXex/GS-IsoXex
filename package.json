@@ -1,6 +1,6 @@
 {
   "name": "gs-isoxex",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "GS IsoXex: Node.js helper for Xbox XISO extraction with multi-core support and progress tracking.",
   "main": "index.js",
   "bin": {
