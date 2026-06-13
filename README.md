@@ -68,6 +68,7 @@ Se você estiver no Windows, abra a pasta `extract-xiso` no Explorador de Arquiv
 
 - `install.bat`
 - `extract.bat`
+- `config.bat`
 - `config.json`
 - `bin\extract.js`
 - `iso\` (pasta para seus arquivos de entrada)
@@ -107,6 +108,25 @@ extract.bat
 Os arquivos extraídos serão salvos em uma pasta de saída próxima aos arquivos de origem ou conforme definido em `config.json`.
 
 ## Configuração opcional
+
+Você pode configurar a ferramenta de duas formas:
+
+### Pelo `config.bat` (recomendado no Windows)
+
+Execute o arquivo `config.bat` clicando duas vezes ou pelo terminal:
+
+```cmd
+config.bat
+```
+
+Ele exibirá um menu interativo perguntando:
+- Caminho de entrada (pasta onde estão seus `.iso`/`.xiso`)
+- Caminho de saída (pasta para os arquivos extraídos)
+- Se deseja apagar a pasta `$SystemUpdate`
+- Se deseja apagar o `.iso`/`.xiso` original após extrair
+- Se deseja apagar arquivos compactados após extrair
+
+### Manualmente pelo `config.json`
 
 Abra `config.json` com um editor de texto simples (Bloco de Notas, Notepad++, VS Code) e personalize conforme necessário:
 
