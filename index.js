@@ -224,7 +224,16 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
   let lOffset = 0;
   let pos = dirStart;
 
+  const isoSize = fs.fstatSync(fd).size;
+
+  function isInBounds(offset, size) {
+    return offset >= 0 && size >= 0 && offset + size <= isoSize;
+  }
+
   while (true) {
+    if (!isInBounds(pos, XISO_TABLE_OFFSET_SIZE)) {
+      return;
+    }
     const tmpBuffer = readBufferSync(fd, XISO_TABLE_OFFSET_SIZE, pos);
     let tmp = tmpBuffer.readUInt16LE(0);
     pos += XISO_TABLE_OFFSET_SIZE;
@@ -237,23 +246,36 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
       const offsetBytes = lOffset * XISO_DWORD_SIZE;
       const pad = (XISO_SECTOR_SIZE - (offsetBytes % XISO_SECTOR_SIZE)) % XISO_SECTOR_SIZE;
       lOffset = offsetBytes + pad;
-      pos = dirStart + lOffset;
+      const newPos = dirStart + lOffset;
+      if (!isInBounds(newPos, XISO_TABLE_OFFSET_SIZE)) {
+        return;
+      }
+      pos = newPos;
       continue;
     }
 
     lOffset = tmp;
     const entrySize = XISO_TABLE_OFFSET_SIZE + XISO_SECTOR_OFFSET_SIZE + XISO_FILESIZE_SIZE + XISO_ATTRIBUTES_SIZE + XISO_FILENAME_LENGTH_SIZE;
+    if (!isInBounds(pos, entrySize)) {
+      return;
+    }
     const entryBuffer = readBufferSync(fd, entrySize, pos);
 
     const rOffset = entryBuffer.readUInt16LE(0);
     const startSector = entryBuffer.readUInt32LE(2);
     const fileSize = entryBuffer.readUInt32LE(6);
     const attributes = entryBuffer.readUInt8(10);
-    const filenameLength = entryBuffer.readUInt8(11);
+    let filenameLength = entryBuffer.readUInt8(11);
 
     pos += entrySize;
-    const nameBuffer = readBufferSync(fd, filenameLength, pos);
-    let filename = decodeXisoFilename(nameBuffer);
+    if (filenameLength > 255 || !isInBounds(pos, filenameLength)) {
+      filenameLength = 0;
+    }
+    let filename = '';
+    if (filenameLength > 0) {
+      const nameBuffer = readBufferSync(fd, filenameLength, pos);
+      filename = decodeXisoFilename(nameBuffer);
+    }
     pos += filenameLength;
 
     // Sanitize invalid bytes and filename characters from XISO entries.
@@ -261,7 +283,11 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
 
     if (!filename || filename === '.' || filename === '..') {
       if (rOffset !== 0) {
-        pos = dirStart + rOffset * XISO_DWORD_SIZE;
+        const newPos = dirStart + rOffset * XISO_DWORD_SIZE;
+        if (!isInBounds(newPos, XISO_TABLE_OFFSET_SIZE)) {
+          return;
+        }
+        pos = newPos;
         lOffset = rOffset;
         continue;
       }
@@ -271,7 +297,10 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
     validateFilename(filename);
 
     if (lOffset !== 0) {
-      traverseDirectorySync(fd, dirStart + lOffset * XISO_DWORD_SIZE, currentPath, opts, results);
+      const leftPos = dirStart + lOffset * XISO_DWORD_SIZE;
+      if (isInBounds(leftPos, XISO_TABLE_OFFSET_SIZE)) {
+        traverseDirectorySync(fd, leftPos, currentPath, opts, results);
+      }
     }
 
     const itemPath = currentPath ? path.join(currentPath, filename) : filename;
@@ -279,17 +308,14 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
 
     if (attributes & XISO_ATTRIBUTE_DIR) {
       if (!skipSystemUpdate) {
-        if (opts.mode === 'extract') {
-          fs.mkdirSync(path.join(opts.outputDir, itemPath), { recursive: true });
+        const dirOffset = startSector * XISO_SECTOR_SIZE + opts.xboxDiscLseek;
+        if (isInBounds(dirOffset, XISO_SECTOR_SIZE)) {
+          if (opts.mode === 'extract') {
+            fs.mkdirSync(path.join(opts.outputDir, itemPath), { recursive: true });
+          }
+          results.push({ type: 'directory', path: itemPath, size: 0 });
+          traverseDirectorySync(fd, dirOffset, itemPath, opts, results);
         }
-        results.push({ type: 'directory', path: itemPath, size: 0 });
-        traverseDirectorySync(
-          fd,
-          startSector * XISO_SECTOR_SIZE + opts.xboxDiscLseek,
-          itemPath,
-          opts,
-          results,
-        );
       }
     } else {
       if (!skipSystemUpdate) {
@@ -301,7 +327,11 @@ function traverseDirectorySync(fd, dirStart, currentPath, opts, results) {
     }
 
     if (rOffset !== 0) {
-      pos = dirStart + rOffset * XISO_DWORD_SIZE;
+      const newPos = dirStart + rOffset * XISO_DWORD_SIZE;
+      if (!isInBounds(newPos, XISO_TABLE_OFFSET_SIZE)) {
+        return;
+      }
+      pos = newPos;
       lOffset = rOffset;
       continue;
     }
