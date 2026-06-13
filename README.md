@@ -4,6 +4,14 @@
 
 GS IsoXex é uma ferramenta em Node.js criada para ajudar na extração de arquivos `.iso` e `.xiso`, com o objetivo principal de auxiliar usuários a transformar imagens de disco em conteúdo pronto para uso no formato XEX.
 
+## 🎥 Tutorial em vídeo
+
+Assista ao tutorial completo no YouTube para aprender a usar o GS IsoXex do zero!
+
+[![GS IsoXex - Tutorial](https://img.youtube.com/vi/RkMRb1IgCBo/0.jpg)](https://www.youtube.com/watch?v=RkMRb1IgCBo)
+
+**Se o vídeo te ajudar, dá aquela força!** 👍 Deixe seu **like**, **compartilhe** com quem precisa e **inscreva-se** no canal. Isso nos motiva a continuar atualizando e melhorando o projeto! 🚀
+
 ## Pré-requisitos
 
 - Node.js 14 ou superior
